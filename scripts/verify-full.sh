@@ -10,7 +10,7 @@ echo
 echo "== Extended API checks =="
 curl -fsS http://127.0.0.1:8008/api/stations -o /tmp/weather_lab_stations.json
 curl -fsS http://127.0.0.1:8008/api/metrics -o /tmp/weather_lab_metrics.json
-curl -fsS "http://127.0.0.1:8008/api/trends?metric=pressure&station_id=tangshan" -o /tmp/weather_lab_trends.json
+curl -fsS "http://127.0.0.1:8008/api/analysis/trends?metric=pressure&station_id=tangshan" -o /tmp/weather_lab_trends.json
 curl -fsS "http://127.0.0.1:8008/api/export/weather_observations.csv?station_id=tangshan" -o /tmp/weather_lab_tangshan.csv
 python - <<'PY'
 import csv
@@ -47,37 +47,36 @@ if chrome_env:
     chrome = Path(chrome_env)
 else:
     candidates = sorted(Path.home().glob(".cache/ms-playwright/chromium-*/chrome-linux/chrome"))
-    chrome = candidates[-1] if candidates else None
+    system_candidates = [Path("/usr/bin/google-chrome-stable"), Path("/usr/bin/chromium")]
+    chrome = candidates[-1] if candidates else next((path for path in system_candidates if path.exists()), None)
 errors = []
 
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True, executable_path=str(chrome) if chrome else None)
     page = browser.new_page(viewport={"width": 1440, "height": 1100})
     page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
-    page.goto("http://127.0.0.1:8008", wait_until="networkidle")
-    overview_tabs = page.locator(".tab").count()
-    station_rows = page.locator(".station-row").count()
-    page.click('[data-view="detail"]')
+    page.goto("http://127.0.0.1:3000", wait_until="domcontentloaded")
+    page.wait_for_selector(".station-marker", state="attached")
+    overview_tabs = page.locator(".tab-link").count()
+    station_markers = page.locator(".station-marker").count()
+    page.click('a[href="/detail"]')
     page.wait_for_timeout(250)
-    page.select_option("#metricSelect", "pressure")
-    records = page.locator("#recordsBody tr").count()
-    page.click('[data-view="system"]')
+    page.select_option('select', "tangshan")
+    page.locator('select').nth(1).select_option("pressure")
     page.wait_for_timeout(250)
-    pipeline = page.locator(".pipeline-step").count()
-    files = page.locator("#filesBody tr").count()
+    charts = page.locator(".recharts-wrapper").count()
+    records = page.locator("tbody tr").count()
     browser.close()
 
 print(f"tabs={overview_tabs}")
-print(f"station_rows={station_rows}")
+print(f"station_markers={station_markers}")
+print(f"charts={charts}")
 print(f"records={records}")
-print(f"pipeline_steps={pipeline}")
-print(f"generated_files={files}")
 print(f"console_errors={errors}")
 
-assert overview_tabs == 3
-assert station_rows == 3
+assert overview_tabs == 2
+assert station_markers == 3
+assert charts == 3
 assert records == 48
-assert pipeline == 7
-assert files == 8
 assert not errors
 PY

@@ -14,10 +14,15 @@ bigdata
 *.doc
 *.docx
 *.mp4
+!reports/实验报告.docx
 
 # Firmware binary is kept local and can be restored from the original data archive.
 data/firmware/
 data/raw/*.body.csv
+
+# Next.js frontend dependencies and build output
+frontend/node_modules/
+frontend/.next/
 
 # Report command logs and local screenshots can contain host paths, device IDs,
 # usernames, network names, or other machine-specific details.
@@ -28,4 +33,7 @@ reports/assets/*.png
 !reports/assets/web_full_overview.png
 !reports/assets/web_full_detail.png
 !reports/assets/web_full_system.png
+!reports/assets/web_next_overview.png
+!reports/assets/web_next_detail.png
+!reports/assets/web_next_mobile.png
 !reports/assets/report_html_preview.png

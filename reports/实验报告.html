@@ -51,208 +51,184 @@
 <body>
   <main>
 <h1>气象大数据采集、分析与可视化系统实验报告</h1>
-<h2>一、实验目标与工作约束</h2>
-<p>本课程设计实现一个气象大数据采集、存储、计算与可视化系统。系统固定展示唐山、北京、上海三个站点。唐山站用于硬件采集演示，温湿度来自 ESP32-C3 与 DHT11；北京、上海以及各站点的气压、风速、风向、天气代码来自 Open-Meteo 真实气象接口。后端保留 HDFS、HBase、Hive、Spark 处理流程，Web 服务使用 FastAPI，对外提供 JSON 接口并托管静态可视化页面。</p>
-<p>本报告与实现过程同步维护。每完成一项环境配置、数据写入、计算任务或页面验证，就记录对应命令、结果和截图，避免在系统完成后补写实验过程。</p>
-<h2>二、开发环境核验</h2>
-<h3>2.1 参考环境来源</h3>
-<p>项目根目录下的 <code>bigdata/</code> 是既有大数据实验参考目录，实际路径为 <code>$BIGDATA_ROOT</code>。该目录已经包含 Hadoop、HBase、Hive、Spark 的安装目录和前序实验报告素材：</p>
-<pre><code class="language-text">$BIGDATA_ROOT/experiment3/hadoop
-$BIGDATA_ROOT/experiment4/hbase
-$BIGDATA_ROOT/experiment6/hive
-$BIGDATA_ROOT/experiment7/spark</code></pre>
-<p>Hadoop 配置中 <code>fs.defaultFS</code> 为 <code>hdfs://localhost:9000</code>，NameNode 与 DataNode 数据目录位于 <code>$BIGDATA_ROOT/experiment3/hdfs/</code>。HBase 的 <code>hbase.rootdir</code> 指向 HDFS 的 <code>/hbase</code>，Hive 使用 Derby metastore，Spark 配置为 YARN client 模式。</p>
-<h3>2.2 大数据运行环境修正</h3>
-<p>参考实验文档按 Ubuntu 路径配置 Java 8：</p>
-<pre><code class="language-bash">export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64</code></pre>
-<p>当前宿主机是 CachyOS/Arch，直接在宿主机运行参考环境会遇到 Java 路径不匹配问题。经核对，课程参考环境实际在 <code>ubuntu22</code> distrobox 中，Hadoop、HBase、Hive、Spark 都应在该容器内运行。本项目新增 <code>scripts/distro-bigdata.sh</code>，统一进入 <code>ubuntu22</code> 后设置 <code>JAVA_HOME</code>、<code>HADOOP_HOME</code>、<code>HBASE_HOME</code>、<code>HIVE_HOME</code>、<code>SPARK_HOME</code> 等环境变量，再执行大数据命令。宿主机负责项目文件、ESP32 串口读取、Open-Meteo 数据获取和截图生成。</p>
-<pre><code class="language-bash">./scripts/check-bigdata-env.sh</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 2-1 distrobox 中 Hadoop、HBase、Hive、Spark 环境核验</strong></p>
-<p>启动 HDFS、YARN、HBase、HBase Thrift 后，<code>jps</code> 可看到 NameNode、DataNode、ResourceManager、NodeManager、HMaster、HRegionServer、ThriftServer 等进程。</p>
-<pre><code class="language-bash">./scripts/start-bigdata-services.sh</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 2-2 distrobox 中启动大数据服务</strong></p>
+<h2>一、项目目标与完成范围</h2>
+<p>本课程设计实现一个气象大数据采集、传输、存储、计算与可视化系统。系统固定展示唐山、北京、上海三个站点，保留课程要求中的 HBase、HDFS、Hive、Spark 链路，并按《Weather Lab 气象大数据计算与可视化系统设计文档》将 Web 层实现为 FastAPI + Next.js。</p>
+<p>本轮整理时未连接 ESP32-C3 实机，因此没有重新进行固件刷写、DHT11 现场读数和串口采样。除实机复测外，代码、数据路径、表名、接口、前端页面和报告口径均已按设计文档对齐。唐山当前温湿度继续使用仓库中已保留的 ESP32 USB 样本，气压、风速、风向和天气代码来自 Open-Meteo；北京、上海全部当前指标来自 Open-Meteo。</p>
+<p>系统完成范围如下：</p>
+<table><thead><tr><th>模块</th><th>设计要求</th><th>当前实现</th></tr></thead><tbody><tr><td>硬件采集</td><td>ESP32-C3 + DHT11 采集唐山温湿度</td><td>实机未连接，本轮不复测；保留 ESP32 脚本和历史 USB 样本</td></tr>
+<tr><td>当前气象补充</td><td>Open-Meteo 当前天气接口</td><td>已生成三站当前数据</td></tr>
+<tr><td>历史数据</td><td>Open-Meteo Historical Weather API</td><td>已生成 2026-06-11 至 2026-06-17 三站小时数据</td></tr>
+<tr><td>HDFS</td><td><code>/weathertextdb</code></td><td>已上传本项目历史 CSV</td></tr>
+<tr><td>Hive</td><td>外部表 <code>weather_table</code></td><td>已按 <code>/weathertextdb</code> 建表并查询</td></tr>
+<tr><td>Spark</td><td><code>/weather_analysis/window_mean</code>、<code>/weather_analysis/summary</code></td><td>已生成 HDFS 输出和本地 JSON</td></tr>
+<tr><td>HBase</td><td><code>realtime_weather</code>，列族 <code>data</code></td><td>已写入三站当前数据</td></tr>
+<tr><td>Web API</td><td>FastAPI</td><td>已提供设计文档接口</td></tr>
+<tr><td>前端</td><td>Next.js、shadcn/ui、Recharts</td><td>已重建为总览页和详细数据页</td></tr></tbody></table>
+<h2>二、系统总体架构</h2>
+<p>系统数据流分为实时链路和历史分析链路。</p>
+<p>实时链路中，唐山站温湿度来自 ESP32-C3 与 DHT11，服务器侧再合并 Open-Meteo 的气压、风速、风向和天气代码；北京、上海当前数据由 Open-Meteo 提供。合并后的三站当前记录写入 HBase 表 <code>realtime_weather</code>，FastAPI 将其作为总览页站点读数。</p>
+<p>历史分析链路中，Open-Meteo 历史小时数据写入 HDFS <code>/weathertextdb</code>，Hive 外部表 <code>weather_table</code> 引用该目录，Spark 从 HDFS 读取数据并输出统计摘要和时间序列。Next.js 前端通过 FastAPI 接口读取当前数据、趋势数据、摘要和原始记录。</p>
+<pre><code class="language-text">ESP32-C3 + DHT11
+    |
+    | USB 串口样本 / 实机演示时可切 TCP CSV
+    v
+Python 采集服务
+    |
+    |---------------------&gt; HBase realtime_weather
+    |                              |
+    |                              v
+    |                         FastAPI 当前数据
+    |
+Open-Meteo Historical Weather API
+    |
+    v
+HDFS /weathertextdb
+    |
+    v
+Hive weather_table
+    |
+    v
+Spark 分析任务
+    |
+    v
+HDFS /weather_analysis/*
+    |
+    v
+FastAPI 分析数据
+    |
+    v
+Next.js 可视化界面</code></pre>
 <h2>三、数据来源与数据模型</h2>
-<h3>3.1 Open-Meteo 真实气象数据</h3>
-<p>本项目使用 Open-Meteo Forecast API 获取当前气象数据，使用 Historical Weather API 获取历史气象序列。Open-Meteo 接口按经纬度返回气象字段，本系统使用字段如下：</p>
+<h3>3.1 站点设置</h3>
+<p>系统固定三个站点：</p>
+<table><thead><tr><th>站点</th><th>station_id</th><th>纬度</th><th>经度</th><th>当前数据来源</th></tr></thead><tbody><tr><td>唐山</td><td>tangshan</td><td>39.63</td><td>118.18</td><td>ESP32 温湿度样本 + Open-Meteo</td></tr>
+<tr><td>北京</td><td>beijing</td><td>39.90</td><td>116.40</td><td>Open-Meteo</td></tr>
+<tr><td>上海</td><td>shanghai</td><td>31.23</td><td>121.47</td><td>Open-Meteo</td></tr></tbody></table>
+<p>本轮验收使用的唐山当前温湿度来自 <code>data/raw/esp32_usb_samples.csv</code> 中已采集样本。由于当前没有连接 ESP32-C3，报告不声称本轮完成了新的实机采样。</p>
+<h3>3.2 Open-Meteo 字段映射</h3>
 <table><thead><tr><th>Open-Meteo 字段</th><th>系统字段</th><th>单位</th></tr></thead><tbody><tr><td><code>temperature_2m</code></td><td><code>temperature</code></td><td>摄氏度</td></tr>
 <tr><td><code>relative_humidity_2m</code></td><td><code>humidity</code></td><td>%</td></tr>
 <tr><td><code>surface_pressure</code></td><td><code>pressure</code></td><td>hPa</td></tr>
 <tr><td><code>wind_speed_10m</code></td><td><code>wind_speed</code></td><td>m/s</td></tr>
 <tr><td><code>wind_direction_10m</code></td><td><code>wind_direction</code></td><td>度</td></tr>
 <tr><td><code>weather_code</code></td><td><code>weather_code</code></td><td>WMO 天气代码</td></tr></tbody></table>
-<p>三个站点的经纬度如下：</p>
-<table><thead><tr><th>站点</th><th>station_id</th><th>纬度</th><th>经度</th></tr></thead><tbody><tr><td>唐山</td><td>tangshan</td><td>39.63</td><td>118.18</td></tr>
-<tr><td>北京</td><td>beijing</td><td>39.90</td><td>116.40</td></tr>
-<tr><td>上海</td><td>shanghai</td><td>31.23</td><td>121.47</td></tr></tbody></table>
-<h3>3.2 统一记录格式</h3>
-<p>系统内部统一使用以下字段：</p>
+<p>统一记录格式如下：</p>
 <pre><code class="language-csv">collect_time,station_id,station_name,temperature,humidity,pressure,wind_speed,wind_direction,weather_code</code></pre>
-<p>其中 <code>collect_time</code> 使用 Asia/Shanghai 时区。写入 Hive 外部表和 Spark 分析时保留完整字段，前端接口再按页面需要返回当前值、趋势序列、统计摘要和记录表。</p>
-<h2>四、实现与验证记录</h2>
-<p>本节随实现过程继续补充。每个小节包含实际命令、运行结果、截图占位和结果分析。</p>
-<h3>4.1 ESP32-C3 MicroPython 固件烧录</h3>
-<p>按照最终指导文档，ESP32-C3 需要先烧录 MicroPython 固件。本次使用 <code>数据采集.zip</code> 中的 <code>ESP32_GENERIC_C3-20250415-v1.25.0.bin</code>，设备通过 USB 枚举为 <code>/dev/ttyACM0</code>，稳定设备路径为 <code>$ESP32_PORT</code>。</p>
-<p>当前主机用户不在 <code>uucp</code> 串口组中，因此需要对当前设备节点临时授予读写权限。刷写过程中 <code>esptool</code> 的 stub flasher 在该 ESP32-C3 上出现 <code>Illegal instruction</code>，因此改用 <code>--no-stub</code> 模式，并用 <code>erase-region 0x0 0x400000</code> 擦除 4MB flash 区域，再写入 MicroPython 固件。</p>
-<pre><code class="language-bash">./scripts/flash-esp32-firmware.sh</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-1 ESP32-C3 MicroPython 固件刷写过程</strong></p>
-<p>刷写完成后，通过 <code>mpremote</code> 连接开发板并读取 MicroPython 版本信息。输出显示固件版本为 MicroPython 1.25.0，构建目标为 <code>ESP32_GENERIC_C3</code>。</p>
-<pre><code class="language-bash">uvx mpremote connect $ESP32_PORT exec &quot;import sys; print(sys.implementation); print(sys.platform)&quot;</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-2 ESP32-C3 MicroPython 运行环境验证</strong></p>
-<h3>4.2 DHT11 传感器 GPIO4 采样验证</h3>
-<p>最终指导文档中的 DHT11 示例使用 IO02 读取数据。本次实物连接中，DHT11 数据线接入 ESP32-C3 的 GPIO4，因此测试程序改为：</p>
-<pre><code class="language-python">sensor = dht.DHT11(Pin(4, pull=Pin.PULL_UP))</code></pre>
-<p>测试程序连续采样 5 次，均能读出温度和湿度，说明 ESP32-C3、MicroPython 固件、DHT11 传感器和 GPIO4 接线可正常工作。</p>
-<pre><code class="language-bash">uvx mpremote connect $ESP32_PORT run esp32/dht11_gpio4_test.py</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-3 DHT11 通过 GPIO4 读取温湿度</strong></p>
-<h3>4.3 写入 GPIO4 版气象站程序</h3>
-<p>在传感器读数验证通过后，先尝试按最终指导文档使用 Wi-Fi 热点和 TCP 服务端传输数据。由于当前开发机只有一块无线网卡，直接开启热点会断开宿主机正在使用的上游 Wi-Fi；虚拟 AP 方案又受到当前 5GHz 上游信道和 ESP32-C3 仅支持 2.4GHz 的限制。因此本阶段改用 USB CDC 串口传输唐山站温湿度数据，先保证硬件采集数据可以稳定进入宿主机程序。</p>
-<p>USB 串口发送格式如下：</p>
-<pre><code class="language-csv">station_id,station_name,temperature,humidity</code></pre>
-<p>示例：</p>
-<pre><code class="language-csv">tangshan,唐山,23,41</code></pre>
-<p>写入 USB 版自动运行程序：</p>
-<pre><code class="language-bash">uvx mpremote connect $ESP32_PORT cp esp32/usb_weatherstation_main.py :main.py</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-4 写入 ESP32-C3 USB 串口传输程序</strong></p>
-<p>宿主机通过 <code>pyserial</code> 读取 USB 串口，并将 10 条样本保存到 <code>data/raw/esp32_usb_samples.csv</code>。采样结果显示唐山站温度为 23 摄氏度，湿度在 43% 到 44% 之间，说明 USB 串口传输链路可用。</p>
-<pre><code class="language-bash">uvx --with pyserial python backend/scripts/read_esp32_usb.py \
-  $ESP32_PORT \
-  --count 10 \
-  --out data/raw/esp32_usb_samples.csv</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-5 通过 USB 串口接收唐山站真实温湿度数据</strong></p>
-<h3>4.4 获取一周历史气象数据</h3>
-<p>根据实验展示需要，历史时间范围取约一周。本次使用 Open-Meteo Historical Weather API 获取 2026-06-11 到 2026-06-17 的小时级历史数据，共 7 天。三个站点均保留完整历史序列，其中唐山历史温湿度也来自 Open-Meteo；唐山当前实时温湿度由 ESP32-C3 的 USB 串口样本覆盖。</p>
-<pre><code class="language-bash">python backend/scripts/fetch_open_meteo.py data/raw
-python backend/scripts/merge_current_weather.py</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-6 获取三站一周真实历史气象数据</strong></p>
-<p>生成的历史 CSV 包含 504 条记录，即 3 个站点乘以 7 天乘以 24 小时。当前数据合并文件 <code>data/raw/current_weather_combined.csv</code> 中，唐山站 <code>source</code> 字段为 <code>esp32_usb_open_meteo</code>，表示温湿度来自硬件，气压、风速、风向和天气代码来自 Open-Meteo。</p>
-<h3>4.5 写入 HDFS 并用 Hive 建表查询</h3>
-<p>参考环境中 <code>/weathertextdb</code> 已存在旧样例文件。为避免旧数据污染本次统计，本实验使用专用 HDFS 路径 <code>/weather_lab/weathertextdb</code> 存放本次一周历史数据，并在 Hive 外部表中只引用该目录。</p>
+<p>本次历史数据范围为 2026-06-11 至 2026-06-17，三站共 504 条小时记录，即 3 个站点 × 7 天 × 24 小时。</p>
+<h2>四、采集与存储实现</h2>
+<h3>4.1 ESP32-C3 与 DHT11</h3>
+<p>硬件设计按设计文档保留：</p>
+<table><thead><tr><th>DHT11</th><th>ESP32-C3</th></tr></thead><tbody><tr><td>VCC</td><td>3.3V</td></tr>
+<tr><td>GND</td><td>GND</td></tr>
+<tr><td>DATA</td><td>GPIO2</td></tr></tbody></table>
+<p>仓库中保留两类 ESP32 程序：</p>
+<p class="list-line">- <code>esp32/weatherstation_main.py</code>：面向网络传输的气象站脚本。</p>
+<p class="list-line">- <code>esp32/usb_weatherstation_main.py</code>：USB 串口传输脚本，便于在热点不可用时完成本机采集。</p>
+<p>本轮没有连接 ESP32-C3，因此只验证非实机部分。唐山当前温湿度仍来自既有 USB 样本，后续连接实机后可重新运行串口读取脚本刷新样本文件。</p>
+<h3>4.2 HDFS 与 Hive</h3>
+<p>历史 CSV 上传到设计文档要求的 HDFS 路径：</p>
 <pre><code class="language-bash">./scripts/upload-weather-to-hdfs.sh data/raw/weather_observations.csv</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-7 将一周历史气象数据上传到 HDFS</strong></p>
-<p>Hive 外部表字段与统一 CSV 字段一致，表位置为 <code>/weather_lab/weathertextdb</code>。建表后按站点统计记录数，三个站点均为 168 条，说明数据范围和表路径正确。</p>
-<pre><code class="language-bash">./scripts/distro-bigdata.sh &quot;hive -f $PROJECT_ROOT/backend/sql/create_weather_table.sql&quot;</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-8 Hive 外部表查询三站记录数</strong></p>
-<h3>4.6 Spark 统计分析</h3>
-<p>Spark 分析脚本从 HDFS 的 <code>/weather_lab/weathertextdb</code> 读取历史 CSV，生成三类结果：站点汇总、日汇总和小时序列。HDFS 输出目录为 <code>/weather_analysis</code>，同时写出本地 JSON 到 <code>data/processed/</code>，供后端接口读取。</p>
+<p>上传后 <code>/weathertextdb</code> 中只保留本项目文件：</p>
+<pre><code class="language-text">/weathertextdb/weather_observations.csv</code></pre>
+<p>Hive 外部表直接引用 <code>/weathertextdb</code>：</p>
+<pre><code class="language-sql">CREATE EXTERNAL TABLE weather_table (
+  collect_time STRING,
+  station_id STRING,
+  station_name STRING,
+  temperature DOUBLE,
+  humidity DOUBLE,
+  pressure DOUBLE,
+  wind_speed DOUBLE,
+  wind_direction DOUBLE,
+  weather_code INT
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY &#x27;,&#x27;
+LOCATION &#x27;/weathertextdb&#x27;;</code></pre>
+<p>验收查询结果显示三个站点记录数一致：</p>
+<table><thead><tr><th>站点</th><th>记录数</th></tr></thead><tbody><tr><td>上海</td><td>168</td></tr>
+<tr><td>北京</td><td>168</td></tr>
+<tr><td>唐山</td><td>168</td></tr></tbody></table>
+<h3>4.3 Spark 分析</h3>
+<p>Spark 分析脚本从 <code>/weathertextdb</code> 读取历史 CSV，输出两类设计文档要求的数据：</p>
+<table><thead><tr><th>输出路径</th><th>含义</th></tr></thead><tbody><tr><td><code>/weather_analysis/window_mean</code></td><td>小时序列，可作为窗口均值结果用于趋势图</td></tr>
+<tr><td><code>/weather_analysis/summary</code></td><td>站点统计摘要</td></tr></tbody></table>
+<p>运行命令：</p>
 <pre><code class="language-bash">./scripts/distro-bigdata.sh &quot;spark-submit --master local[2] \
   $PROJECT_ROOT/backend/scripts/spark_weather_analysis.py \
-  /weather_lab/weathertextdb \
+  /weathertextdb \
   /weather_analysis \
   $PROJECT_ROOT/data/processed&quot;</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-9 Spark 读取 HDFS 并生成统计结果</strong></p>
-<p>Spark 汇总结果显示：北京、上海、唐山各 168 条记录；唐山一周平均温度 22.91 摄氏度、平均湿度 76.42%。HDFS 结果目录包含 <code>station_summary</code>、<code>daily_summary</code>、<code>hourly_series</code> 三个子目录，本地 JSON 文件也已生成。</p>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-10 Spark 输出目录与本地 JSON 核验</strong></p>
-<h3>4.7 HBase 写入当前实时数据</h3>
-<p>当前三站数据写入 HBase 表 <code>weather_current</code>。表包含两个列族：<code>info</code> 存放站点名称、经纬度、采集时间和数据来源；<code>metrics</code> 存放温度、湿度、气压、风速、风向和天气代码。唐山行的 <code>source</code> 为 <code>esp32_usb_open_meteo</code>，温度 23.0 摄氏度、湿度 43.0%，来自 ESP32-C3 USB 串口样本。</p>
-<pre><code class="language-bash">python backend/scripts/build_hbase_current_script.py \
+<p>Spark 汇总结果如下：</p>
+<table><thead><tr><th>station_id</th><th>站点</th><th>记录数</th><th>平均温度</th><th>最低温度</th><th>最高温度</th><th>平均湿度</th><th>平均气压</th><th>平均风速</th></tr></thead><tbody><tr><td>beijing</td><td>北京</td><td>168</td><td>24.89</td><td>16.7</td><td>33.3</td><td>63.98</td><td>1001.99</td><td>1.61</td></tr>
+<tr><td>shanghai</td><td>上海</td><td>168</td><td>24.70</td><td>19.6</td><td>34.5</td><td>73.49</td><td>1009.44</td><td>2.61</td></tr>
+<tr><td>tangshan</td><td>唐山</td><td>168</td><td>22.91</td><td>15.7</td><td>30.1</td><td>76.42</td><td>1004.01</td><td>2.28</td></tr></tbody></table>
+<h3>4.4 HBase 当前表</h3>
+<p>当前三站数据写入 HBase 表 <code>realtime_weather</code>，列族为 <code>data</code>，行键格式为：</p>
+<pre><code class="language-text">station_id_timestamp</code></pre>
+<p>示例行键：</p>
+<pre><code class="language-text">tangshan_20260618173403</code></pre>
+<p>生成并写入 HBase 的命令：</p>
+<pre><code class="language-bash">uv run python backend/scripts/build_hbase_current_script.py \
   data/raw/current_weather_combined.csv \
   data/processed/hbase_current_weather_puts.hbase
 
 ./scripts/distro-bigdata.sh &quot;hbase shell -n $PROJECT_ROOT/data/processed/hbase_current_weather_puts.hbase&quot;</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-11 HBase 写入并 scan 当前三站实时数据</strong></p>
-<h3>4.8 FastAPI 数据接口</h3>
-<p>后端使用 FastAPI 读取本项目生成的真实数据文件，不使用模拟数据。<code>/api/dashboard</code> 聚合当前数据、Spark 汇总结果、日汇总、小时序列、Open-Meteo 元数据和 ESP32 最新样本。当前唐山站数据中，温度和湿度来自 ESP32-C3 USB 串口，气压、风速、风向和天气代码来自 Open-Meteo。</p>
-<pre><code class="language-bash">./scripts/run-web.sh
-curl -s http://127.0.0.1:8008/api/dashboard | python -m json.tool | sed -n &quot;1,80p&quot;</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-12 FastAPI 聚合接口返回真实数据</strong></p>
-<p>接口核验结果显示：唐山站当前温度 23.0 摄氏度、湿度 43.0%，<code>source</code> 为 <code>esp32_usb_open_meteo</code>；北京、上海当前数据来源为 <code>open_meteo</code>；Spark 汇总中每个站点记录数均为 168。</p>
-<h3>4.9 可视化页面</h3>
-<p>可视化页面由 FastAPI 直接托管静态资源，不依赖外部 CDN。总览页展示站点示意地图、当前站点五项指标和数据来源；详细页展示温度趋势、湿度趋势、站点汇总和最近 36 条小时记录。页面数据全部来自 <code>/api/dashboard</code>，与 HDFS、Hive、Spark、HBase 验证链路使用同一批真实数据文件。</p>
-<pre><code class="language-bash">uvx --with playwright python - &lt;&lt;&#x27;PY&#x27;
-from pathlib import Path
-from playwright.sync_api import sync_playwright
-
-root = Path(&#x27;$PROJECT_ROOT&#x27;)
-chrome = Path(&#x27;$PLAYWRIGHT_CHROME&#x27;)
-with sync_playwright() as p:
-    browser = p.chromium.launch(headless=True, executable_path=str(chrome))
-    page = browser.new_page(viewport={&#x27;width&#x27;: 1440, &#x27;height&#x27;: 1050})
-    page.goto(&#x27;http://127.0.0.1:8008&#x27;, wait_until=&#x27;networkidle&#x27;)
-    page.screenshot(path=str(root / &#x27;reports/assets/web_dashboard_overview.png&#x27;), full_page=True)
-    page.click(&#x27;#detailButton&#x27;)
-    page.screenshot(path=str(root / &#x27;reports/assets/web_dashboard_detail.png&#x27;), full_page=True)
-    print(page.locator(&#x27;.station-marker&#x27;).count())
-    print(page.locator(&#x27;#recordsBody tr&#x27;).count())
-    browser.close()
-PY</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-13 可视化总览页</strong></p>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-14 可视化详细数据页</strong></p>
-<p>窄屏视口下也完成了截图验证，指标卡、站点信息和地图区域可以按单列布局显示。</p>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 4-15 可视化页面窄屏显示</strong></p>
-<h3>4.10 完整版前后端扩展</h3>
-<p>在 MVP 基础上，后端继续扩展为完整数据服务。新增接口包括：<code>/api/stations</code> 返回站点和当前读数，<code>/api/metrics</code> 返回可视化指标定义，<code>/api/trends</code> 按站点和指标返回趋势序列，<code>/api/system</code> 返回本地结果文件、HDFS、Hive、Spark、HBase 路径和数据规模，<code>/api/export/weather_observations.csv</code> 支持按站点导出历史 CSV。前端从两页扩展为三个视图：</p>
-<p class="list-line">- <code>总览</code>：地图、站点当前读数、数据来源和五项指标。</p>
-<p class="list-line">- <code>详细数据</code>：站点筛选、指标筛选、温湿度趋势、气压风速趋势、三站同指标对比、最近 48 条记录和 CSV 导出。</p>
-<p class="list-line">- <code>系统状态</code>：ESP32、Open-Meteo、HDFS、Hive、Spark、HBase、FastAPI 链路状态，以及后端读取的生成文件。</p>
-<p>不同量纲的混合图表按各指标自身范围绘制，避免气压数值过大导致风速曲线被压平；三站同指标对比仍使用同一刻度。页面通过 Playwright 验证三视图渲染、站点列表、数据表、链路步骤和生成文件列表，浏览器控制台无错误。</p>
-<figure><img src="../reports/assets/web_full_overview.png" alt="" /></figure>
-<p><strong>图 4-16 完整版总览页</strong></p>
-<figure><img src="../reports/assets/web_full_detail.png" alt="" /></figure>
-<p><strong>图 4-17 完整版详细数据页</strong></p>
-<figure><img src="../reports/assets/web_full_system.png" alt="" /></figure>
-<p><strong>图 4-18 完整版系统状态页</strong></p>
-<h2>五、系统运行说明</h2>
-<h3>5.1 启动顺序</h3>
-<p>系统完整版的启动顺序如下：</p>
-<p class="list-line">1. 连接 ESP32-C3 和 DHT11，确认 DHT11 数据线接在 GPIO4。</p>
-<p class="list-line">2. 在宿主机读取 USB 串口样本，生成 <code>data/raw/esp32_usb_samples.csv</code>。</p>
-<p class="list-line">3. 获取 Open-Meteo 当前数据与 7 天历史数据，生成 <code>data/raw/weather_observations.csv</code> 和 <code>data/raw/current_weather_combined.json</code>。</p>
-<p class="list-line">4. 在 <code>ubuntu22</code> distrobox 内启动 HDFS、YARN、HBase 和 HBase Thrift。</p>
-<p class="list-line">5. 上传历史数据到 HDFS，使用 Hive 建外部表查询，使用 Spark 生成统计结果。</p>
-<p class="list-line">6. 将三站当前数据写入 HBase 表 <code>weather_current</code>。</p>
-<p class="list-line">7. 启动 FastAPI 服务并打开可视化页面。</p>
-<p>常用命令如下：</p>
-<pre><code class="language-bash">uvx --with pyserial python backend/scripts/read_esp32_usb.py \
-  $ESP32_PORT \
-  --count 10 \
-  --out data/raw/esp32_usb_samples.csv
-
-python backend/scripts/fetch_open_meteo.py data/raw
-python backend/scripts/merge_current_weather.py
-./scripts/start-bigdata-services.sh
-./scripts/upload-weather-to-hdfs.sh data/raw/weather_observations.csv
-./scripts/distro-bigdata.sh &quot;hive -f $PROJECT_ROOT/backend/sql/create_weather_table.sql&quot;
-./scripts/distro-bigdata.sh &quot;spark-submit --master local[2] $PROJECT_ROOT/backend/scripts/spark_weather_analysis.py /weather_lab/weathertextdb /weather_analysis $PROJECT_ROOT/data/processed&quot;
-python backend/scripts/build_hbase_current_script.py data/raw/current_weather_combined.csv data/processed/hbase_current_weather_puts.hbase
-./scripts/distro-bigdata.sh &quot;hbase shell -n $PROJECT_ROOT/data/processed/hbase_current_weather_puts.hbase&quot;
-./scripts/run-web.sh</code></pre>
-<p>报告 Markdown 可导出为可浏览、可打印的 HTML 文件：</p>
-<pre><code class="language-bash">python scripts/build-report-html.py reports/实验报告.md reports/实验报告.html</code></pre>
-<h3>5.2 MVP 验收结果</h3>
-<p>本项目新增 <code>scripts/verify-mvp.sh</code>，用于核验当前 MVP 是否满足演示要求。脚本检查本地数据文件、FastAPI 接口、HDFS 输入目录、Spark 输出目录和 HBase 当前表。验收输出显示：历史记录数为 504，三站当前数据均可通过接口读取，HDFS 与 Spark 输出目录存在，HBase 表 <code>weather_current</code> 可 scan 到当前站点数据。</p>
-<pre><code class="language-bash">./scripts/verify-mvp.sh</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 5-1 MVP 验收脚本输出</strong></p>
-<h3>5.3 完整版验收结果</h3>
-<p>完整版新增 <code>scripts/verify-full.sh</code>，在 MVP 验收基础上继续检查扩展接口和前端三视图。验收内容包括：站点接口返回 3 个站点，指标接口返回 5 个指标，唐山气压趋势为 168 个小时点，唐山 CSV 导出为 168 条记录；前端包含 3 个视图标签、3 个站点行、48 条详细记录、7 个数据链路步骤、8 个生成文件，浏览器控制台无错误。</p>
+<p>HBase scan 已返回北京、上海、唐山三行当前数据，包含 <code>data:temperature</code>、<code>data:humidity</code>、<code>data:pressure</code>、<code>data:wind_speed</code>、<code>data:wind_direction</code>、<code>data:weather_code</code> 等列。</p>
+<h2>五、FastAPI 接口实现</h2>
+<p>FastAPI 只负责数据接口，不再托管静态前端。Next.js 通过 rewrite 代理访问 FastAPI，开发时默认端口如下：</p>
+<table><thead><tr><th>服务</th><th>地址</th></tr></thead><tbody><tr><td>FastAPI</td><td><code>http://127.0.0.1:8008</code></td></tr>
+<tr><td>Next.js</td><td><code>http://127.0.0.1:3000</code></td></tr></tbody></table>
+<p>主要接口按设计文档对齐：</p>
+<table><thead><tr><th>接口</th><th>用途</th></tr></thead><tbody><tr><td><code>GET /api/stations/current</code></td><td>总览页地图点位和当前五指标</td></tr>
+<tr><td><code>GET /api/stations/{station_id}/live?seconds=150</code></td><td>最近实时序列</td></tr>
+<tr><td><code>GET /api/analysis/trends</code></td><td>详细数据页趋势和多站对比</td></tr>
+<tr><td><code>GET /api/analysis/summary</code></td><td>统计摘要</td></tr>
+<tr><td><code>GET /api/records</code></td><td>原始记录表</td></tr>
+<tr><td><code>GET /api/export/weather_observations.csv</code></td><td>CSV 导出</td></tr></tbody></table>
+<p>验收结果显示：</p>
+<p class="list-line">- 当前站点接口返回 3 个站点。</p>
+<p class="list-line">- 指标接口返回 5 个指标：温度、湿度、气压、风速、风向。</p>
+<p class="list-line">- 唐山气压趋势返回 168 个小时点。</p>
+<p class="list-line">- 唐山 CSV 导出返回 168 条记录。</p>
+<h2>六、Next.js 可视化实现</h2>
+<p>前端已从旧的静态 HTML/Canvas 实现改为 Next.js。页面数量按设计文档收敛为两个：</p>
+<p class="list-line">- <code>总览</code>：中国轮廓地图、站点点位、当前站点五指标读数。</p>
+<p class="list-line">- <code>详细数据</code>：站点筛选、指标筛选、趋势图、统计摘要、三站对比和数据记录表。</p>
+<p>UI 组件按 shadcn/ui 的本地组件方式组织，包含 <code>Button</code>、<code>Card</code>、<code>Select</code> 等基础组件。图表使用 Recharts，图表线条细、网格弱化、颜色只用于指标区分。页面使用浅色、低噪声的数据工作台风格，控件圆角不超过 8px，保留 reduced motion 支持，不使用 emoji、深蓝大屏风格或高饱和渐变。</p>
+<p>地图层从自然资源部标准地图服务系统页面加载的中国地图图片中提取轮廓，保留原始资源文件并生成透明背景单色版用于前端展示；站点不再使用手写百分比，也不再用粗略线性经纬度投影，而是按这张官方轮廓图校准北京、唐山、上海三个城市锚点。北京位于华北平原北缘，唐山位于北京以东、渤海湾西北侧，上海位于长江口附近；窄屏下仅调整标签方向，点位本身保持不变。</p>
+<figure><img src="../reports/assets/web_next_overview.png" alt="" /></figure>
+<p><strong>图 6-1 Next.js 总览页</strong></p>
+<p>总览页以地图为第一视觉层，三个站点点位可点击切换。唐山站当前读数显示温度 23 摄氏度、湿度 43%、气压 1000.3 hPa、风速 2.8 m/s、风向 159 deg SSE，数据来源标记为 <code>ESP32 + Open-Meteo</code>。</p>
+<figure><img src="../reports/assets/web_next_detail.png" alt="" /></figure>
+<p><strong>图 6-2 Next.js 详细数据页</strong></p>
+<p>详细数据页使用 Recharts 绘制温湿度趋势、风况趋势和多站同指标对比。下方统计摘要展示三站记录数、均温、均湿和温度范围，记录表展示当前站点最近 48 条小时记录。</p>
+<figure><img src="../reports/assets/web_next_mobile.png" alt="" /></figure>
+<p><strong>图 6-3 窄屏总览页</strong></p>
+<p>窄屏下，页签、刷新按钮、地图、指标卡均改为单列布局。站点标签经过单独位置调整，避免唐山、北京点位接近时标签重叠或被裁切。</p>
+<h2>七、运行与验收</h2>
+<p>启动 Web 演示：</p>
+<pre><code class="language-bash">./scripts/run-web.sh</code></pre>
+<p>该脚本会启动 FastAPI 和 Next.js。默认访问地址：</p>
+<pre><code class="language-text">http://127.0.0.1:3000</code></pre>
+<p>完整验收命令：</p>
 <pre><code class="language-bash">./scripts/verify-full.sh</code></pre>
-<p>&gt; 本地过程截图已保留在工作区。公开仓库不提交该终端截图，以避免暴露本机路径、设备序列号或网络信息。</p>
-<p><strong>图 5-2 完整版验收脚本输出</strong></p>
-<h3>5.4 报告导出预览</h3>
-<p>为便于阶段性提交和浏览，本项目将 Markdown 报告导出为 <code>reports/实验报告.html</code>。导出脚本会将报告中的图片占位替换为实际图片，并保留表格、代码块和章节结构。浏览器预览显示公开版报告正文、核心页面截图和 2 个数据表均可正常渲染。</p>
-<pre><code class="language-bash">python scripts/build-report-html.py reports/实验报告.md reports/实验报告.html</code></pre>
-<figure><img src="../reports/assets/report_html_preview.png" alt="" /></figure>
-<p><strong>图 5-3 HTML 报告导出预览</strong></p>
-<h2>六、实验结果与后续工作</h2>
-<p>本次完整版已完成从真实数据采集到可视化展示的闭环。唐山站当前温湿度由 ESP32-C3 与 DHT11 采集，并通过 USB 串口进入宿主机；唐山、北京、上海一周历史气象数据来自 Open-Meteo Archive API；历史数据写入 HDFS 后可由 Hive 外部表查询，并由 Spark 生成站点汇总、日汇总和小时序列；当前数据写入 HBase 表 <code>weather_current</code>；FastAPI 提供站点、指标、趋势、系统状态和 CSV 导出接口；前端提供总览、详细数据和系统状态三个视图。</p>
-<p>当前无线热点与 ESP32 TCP 传输方案尚未作为主链路启用。原因是宿主机只有一块无线网卡，直接开启热点会断开当前上游 Wi-Fi；虚拟 AP 方案受当前上游 Wi-Fi 频段和 ESP32-C3 2.4GHz 支持限制影响。本系统暂以 USB 串口完成硬件数据链路，后续可在具备独立 2.4GHz 热点或第二块无线网卡时补充 TCP 传输。</p>
+<p>最终验收结果：</p>
+<table><thead><tr><th>检查项</th><th>结果</th></tr></thead><tbody><tr><td>本地历史数据</td><td>504 条</td></tr>
+<tr><td>当前站点数据</td><td>3 个站点</td></tr>
+<tr><td>HDFS 输入</td><td><code>/weathertextdb/weather_observations.csv</code> 存在</td></tr>
+<tr><td>Spark 输出</td><td><code>/weather_analysis/summary</code>、<code>/weather_analysis/window_mean</code> 存在</td></tr>
+<tr><td>Hive 查询</td><td>三站各 168 条</td></tr>
+<tr><td>HBase scan</td><td><code>realtime_weather</code> 返回 3 行</td></tr>
+<tr><td>FastAPI 当前/摘要/趋势接口</td><td>通过</td></tr>
+<tr><td>Next.js 页签</td><td>2 个</td></tr>
+<tr><td>站点点位</td><td>3 个</td></tr>
+<tr><td>Recharts 图表</td><td>3 个</td></tr>
+<tr><td>记录表</td><td>48 行</td></tr>
+<tr><td>浏览器控制台错误</td><td>0 个</td></tr></tbody></table>
+<h2>八、结论与限制</h2>
+<p>本项目已经按设计文档完成除 ESP32 实机复测外的主要设计与实现对齐。大数据链路使用 <code>/weathertextdb</code>、<code>weather_table</code>、<code>realtime_weather</code> 和 <code>/weather_analysis/*</code>，不再使用旧的扩展路径和旧表名；Web 层改为 FastAPI + Next.js，前端不再使用静态 HTML/Canvas，也不再保留设计文档以外的多余实现页面。</p>
+<p>当前限制是本轮没有连接 ESP32-C3 实机。报告中的唐山当前温湿度来自已有 USB 样本，不代表本轮现场采集。连接开发板后，应重新执行串口采集、合并当前数据、写入 HBase，并再次运行 <code>./scripts/verify-full.sh</code> 完成最终实机验收。</p>
   </main>
 </body>
 </html>

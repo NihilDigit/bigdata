@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 
-TABLE = "weather_current"
+TABLE = "realtime_weather"
 
 
 def quote(value: object) -> str:
@@ -24,12 +24,19 @@ def main() -> int:
 
     lines = [
         f"table_name = {quote(TABLE)}",
-        "create table_name, 'info', 'metrics' unless exists(table_name)",
+        "create table_name, 'data' unless exists(table_name)",
     ]
 
     for row in rows:
-        row_key = row["id"]
-        info_fields = ["name", "latitude", "longitude", "source", "time"]
+        timestamp = row["time"].replace("-", "").replace(":", "").replace("T", "").replace("+08:00", "")
+        row_key = f"{row['id']}_{timestamp[:14]}"
+        data_fields = [
+            ("station_name", row["name"]),
+            ("latitude", row["latitude"]),
+            ("longitude", row["longitude"]),
+            ("source", row["source"]),
+            ("collect_time", row["time"]),
+        ]
         metric_fields = [
             "temperature",
             "humidity",
@@ -38,13 +45,13 @@ def main() -> int:
             "wind_direction",
             "weather_code",
         ]
-        for field in info_fields:
+        for field, value in data_fields:
             lines.append(
-                f"put table_name, {quote(row_key)}, {quote('info:' + field)}, {quote(row[field])}"
+                f"put table_name, {quote(row_key)}, {quote('data:' + field)}, {quote(value)}"
             )
         for field in metric_fields:
             lines.append(
-                f"put table_name, {quote(row_key)}, {quote('metrics:' + field)}, {quote(row[field])}"
+                f"put table_name, {quote(row_key)}, {quote('data:' + field)}, {quote(row[field])}"
             )
 
     lines.extend(

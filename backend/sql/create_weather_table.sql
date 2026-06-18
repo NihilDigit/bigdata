@@ -1,6 +1,3 @@
-CREATE DATABASE IF NOT EXISTS weather_lab;
-USE weather_lab;
-
 DROP TABLE IF EXISTS weather_table;
 
 CREATE EXTERNAL TABLE weather_table (
@@ -16,7 +13,7 @@ CREATE EXTERNAL TABLE weather_table (
 )
 ROW FORMAT DELIMITED
 FIELDS TERMINATED BY ','
-LOCATION '/weather_lab/weathertextdb';
+LOCATION '/weathertextdb';
 
 SELECT station_name, COUNT(*) AS records
 FROM weather_table

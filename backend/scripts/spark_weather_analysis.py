@@ -40,7 +40,7 @@ def write_json(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def main() -> int:
-    input_path = sys.argv[1] if len(sys.argv) > 1 else "/weather_lab/weathertextdb"
+    input_path = sys.argv[1] if len(sys.argv) > 1 else "/weathertextdb"
     hdfs_output = sys.argv[2] if len(sys.argv) > 2 else "/weather_analysis"
     local_output = Path(sys.argv[3]) if len(sys.argv) > 3 else Path("data/processed")
 
@@ -98,13 +98,13 @@ def main() -> int:
         ).orderBy("collect_time", "station_id")
 
         station_summary.write.mode("overwrite").option("header", "true").csv(
-            f"{hdfs_output}/station_summary"
+            f"{hdfs_output}/summary"
         )
         daily_summary.write.mode("overwrite").option("header", "true").csv(
             f"{hdfs_output}/daily_summary"
         )
         hourly_series.write.mode("overwrite").option("header", "true").csv(
-            f"{hdfs_output}/hourly_series"
+            f"{hdfs_output}/window_mean"
         )
 
         write_json(

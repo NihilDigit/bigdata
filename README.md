@@ -12,10 +12,12 @@
 
 大数据环境运行在 `ubuntu22` distrobox 中。默认假定参考大数据环境位于当前仓库上两级目录下的 `bigdata/`，也可以通过 `BIGDATA_ROOT` 和 `BIGDATA_ROOT_IN_CONTAINER` 覆盖：
 
-- Hadoop/HDFS：历史 CSV 上传到 `/weather_lab/weathertextdb`
-- Hive：外部表 `weather_lab.weather_table`
+- Hadoop/HDFS：历史 CSV 上传到 `/weathertextdb`
+- Hive：外部表 `weather_table`
 - Spark：统计结果输出到 `/weather_analysis`
-- HBase：当前三站数据写入 `weather_current`
+- HBase：当前三站数据写入 `realtime_weather`
+- Web API：FastAPI，默认运行在 `http://127.0.0.1:8008`
+- 前端：Next.js + shadcn/ui 风格组件 + Recharts，默认运行在 `http://127.0.0.1:3000`
 
 ## Web 演示
 
@@ -28,31 +30,26 @@
 打开页面：
 
 ```text
-http://127.0.0.1:8008
-```
-
-聚合接口：
-
-```text
-http://127.0.0.1:8008/api/dashboard
+http://127.0.0.1:3000
 ```
 
 主要接口：
 
 ```text
-/api/current
+/api/stations/current
 /api/stations
 /api/metrics
-/api/trends?metric=pressure&station_id=tangshan
-/api/system
+/api/stations/tangshan/live?seconds=150
+/api/analysis/trends?metric=pressure&station_id=tangshan
+/api/analysis/summary
+/api/records?station_id=tangshan
 /api/export/weather_observations.csv
 ```
 
-前端包含三个视图：
+前端包含两个页面：
 
 - `总览`：地图、站点当前读数和五项指标。
-- `详细数据`：站点筛选、指标筛选、趋势图、三站对比、记录表和 CSV 导出。
-- `系统状态`：ESP32、Open-Meteo、HDFS、Hive、Spark、HBase、FastAPI 链路和生成文件。
+- `详细数据`：站点筛选、指标筛选、趋势图、统计摘要、三站对比、记录表和 CSV 导出。
 
 ## MVP 验收
 
@@ -70,7 +67,7 @@ http://127.0.0.1:8008/api/dashboard
 ./scripts/verify-full.sh
 ```
 
-该脚本会额外检查扩展 API、CSV 导出和前端三视图渲染。
+该脚本会额外检查扩展 API、CSV 导出和 Next.js 两页渲染。
 
 ## 报告
 

@@ -8,12 +8,10 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import Response, StreamingResponse
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FRONTEND_DIR = ROOT / "frontend"
 RAW_DIR = ROOT / "data" / "raw"
 PROCESSED_DIR = ROOT / "data" / "processed"
 
@@ -21,12 +19,15 @@ PROCESSED_DIR = ROOT / "data" / "processed"
 app = FastAPI(title="Weather Lab API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:8008", "http://localhost:8008"],
+    allow_origins=[
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+        "http://127.0.0.1:8008",
+        "http://localhost:8008",
+    ],
     allow_methods=["GET"],
     allow_headers=["*"],
 )
-app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
-
 STATIONS = [
     {"id": "tangshan", "name": "唐山", "latitude": 39.63, "longitude": 118.18},
     {"id": "beijing", "name": "北京", "latitude": 39.90, "longitude": 116.40},
@@ -76,17 +77,12 @@ def filter_station(rows: list[dict[str, Any]], station_id: str | None) -> list[d
     return [row for row in rows if row.get("station_id") == station_id or row.get("id") == station_id]
 
 
-def local_file_state(path: Path) -> dict[str, Any]:
-    return {
-        "path": str(path.relative_to(ROOT)),
-        "exists": path.exists(),
-        "bytes": path.stat().st_size if path.exists() else 0,
-    }
-
-
 @app.get("/")
-def index() -> FileResponse:
-    return FileResponse(FRONTEND_DIR / "index.html")
+def index() -> dict[str, str]:
+    return {
+        "name": "Weather Lab API",
+        "frontend": "Run Next.js from frontend/ on http://127.0.0.1:3000",
+    }
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -94,18 +90,13 @@ def favicon() -> Response:
     return Response(status_code=204)
 
 
-@app.get("/api/current")
 def current_weather() -> list[dict[str, Any]]:
     return read_json(RAW_DIR / "current_weather_combined.json")
 
 
-@app.get("/api/current/{station_id}")
-def current_weather_station(station_id: str) -> dict[str, Any]:
-    ensure_station(station_id)
-    for row in current_weather():
-        if row["id"] == station_id:
-            return row
-    raise HTTPException(status_code=404, detail=f"current data unavailable: {station_id}")
+@app.get("/api/stations/current")
+def stations_current() -> list[dict[str, Any]]:
+    return current_weather()
 
 
 @app.get("/api/stations")
@@ -124,6 +115,11 @@ def station_summary() -> list[dict[str, Any]]:
     return read_json(PROCESSED_DIR / "station_summary.json")
 
 
+@app.get("/api/analysis/summary")
+def analysis_summary() -> list[dict[str, Any]]:
+    return station_summary()
+
+
 @app.get("/api/daily")
 def daily_summary(station_id: str | None = None) -> list[dict[str, Any]]:
     rows = read_json(PROCESSED_DIR / "daily_summary.json")
@@ -138,13 +134,16 @@ def hourly_series(station_id: str | None = None) -> list[dict[str, Any]]:
     return filter_station(rows, station_id)
 
 
-@app.get("/api/trends")
-def metric_trends(
+@app.get("/api/analysis/trends")
+def analysis_trends(
+    station_id: str = Query(default="all"),
     metric: str = Query(default="temperature"),
-    station_id: str | None = None,
+    range: str = Query(default="7d"),
+    granularity: str = Query(default="1h"),
 ) -> dict[str, Any]:
     ensure_metric(metric)
-    rows = filter_station(read_json(PROCESSED_DIR / "hourly_series.json"), station_id)
+    effective_station = None if station_id == "all" else station_id
+    rows = filter_station(read_json(PROCESSED_DIR / "hourly_series.json"), effective_station)
     grouped: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         grouped.setdefault(row["station_id"], []).append(
@@ -157,8 +156,18 @@ def metric_trends(
         )
     return {
         "metric": next(item for item in METRICS if item["id"] == metric),
+        "station_id": station_id,
+        "range": range,
+        "granularity": granularity,
         "series": grouped,
     }
+
+
+@app.get("/api/stations/{station_id}/live")
+def station_live(station_id: str, seconds: int = Query(default=150, ge=10, le=3600)) -> list[dict[str, Any]]:
+    ensure_station(station_id)
+    rows = filter_station(read_json(PROCESSED_DIR / "hourly_series.json"), station_id)
+    return rows[-min(len(rows), max(1, seconds // 10)) :]
 
 
 @app.get("/api/records")
@@ -169,45 +178,6 @@ def records(
     rows = read_csv(RAW_DIR / "weather_observations.csv")
     rows = filter_station(rows, station_id)
     return rows[-limit:]
-
-
-@app.get("/api/system")
-def system_status() -> dict[str, Any]:
-    weather_rows = read_csv(RAW_DIR / "weather_observations.csv")
-    current = current_weather()
-    summary = station_summary()
-    hourly = hourly_series()
-    meta = read_json(RAW_DIR / "open_meteo_fetch_meta.json")
-    esp32_samples = read_csv(RAW_DIR / "esp32_usb_samples.csv")
-    files = [
-        RAW_DIR / "weather_observations.csv",
-        RAW_DIR / "current_weather_combined.json",
-        RAW_DIR / "esp32_usb_samples.csv",
-        RAW_DIR / "open_meteo_fetch_meta.json",
-        PROCESSED_DIR / "station_summary.json",
-        PROCESSED_DIR / "daily_summary.json",
-        PROCESSED_DIR / "hourly_series.json",
-        PROCESSED_DIR / "hbase_current_weather_puts.hbase",
-    ]
-    return {
-        "generated_at": meta.get("fetched_at"),
-        "historical_range": meta.get("historical_range"),
-        "counts": {
-            "weather_observations": len(weather_rows),
-            "current_stations": len(current),
-            "station_summary": len(summary),
-            "hourly_series": len(hourly),
-            "esp32_samples": len(esp32_samples),
-        },
-        "paths": {
-            "hdfs_input": "/weather_lab/weathertextdb",
-            "spark_output": "/weather_analysis",
-            "hive_table": "weather_lab.weather_table",
-            "hbase_table": "weather_current",
-        },
-        "files": [local_file_state(path) for path in files],
-        "latest_esp32_sample": esp32_samples[-1] if esp32_samples else None,
-    }
 
 
 @app.get("/api/export/weather_observations.csv")
@@ -233,24 +203,3 @@ def export_weather_observations(station_id: str | None = None) -> StreamingRespo
         "Content-Disposition": f'attachment; filename="weather_observations{suffix}.csv"'
     }
     return StreamingResponse(iter([buffer.getvalue()]), media_type="text/csv", headers=headers)
-
-
-@app.get("/api/dashboard")
-def dashboard() -> dict[str, Any]:
-    current = current_weather()
-    summary = station_summary()
-    daily = daily_summary()
-    hourly = hourly_series()
-    meta = read_json(RAW_DIR / "open_meteo_fetch_meta.json")
-    esp32_samples = read_csv(RAW_DIR / "esp32_usb_samples.csv")
-    return {
-        "stations": STATIONS,
-        "metrics": METRICS,
-        "current": current,
-        "summary": summary,
-        "daily": daily,
-        "hourly": hourly,
-        "meta": meta,
-        "esp32_latest": esp32_samples[-1] if esp32_samples else None,
-        "system": system_status(),
-    }

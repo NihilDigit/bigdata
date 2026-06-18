@@ -1,0 +1,415 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: oklch(0.975 0.006 225);
+  --foreground: oklch(0.23 0.012 230);
+  --surface: oklch(0.992 0.004 225);
+  --surface-muted: oklch(0.955 0.007 225);
+  --border: oklch(0.88 0.01 225);
+  --primary: oklch(0.58 0.12 190);
+  --primary-hover: oklch(0.52 0.12 190);
+  --primary-foreground: oklch(0.98 0.006 190);
+  --focus: oklch(0.62 0.12 190);
+  --muted-foreground: oklch(0.45 0.014 225);
+  --danger: oklch(0.58 0.16 30);
+  --metric-temperature: oklch(0.63 0.14 45);
+  --metric-humidity: oklch(0.6 0.12 245);
+  --metric-pressure: oklch(0.57 0.08 300);
+  --metric-wind-speed: oklch(0.58 0.11 150);
+  --metric-wind-direction: oklch(0.56 0.1 270);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    "Source Han Sans SC",
+    "Noto Sans CJK SC",
+    "Noto Sans SC",
+    "Microsoft YaHei UI",
+    "Microsoft YaHei",
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+button,
+select,
+a {
+  font: inherit;
+}
+
+.eyebrow {
+  margin: 0 0 3px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.view-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(74px, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.tab-link {
+  min-height: 34px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  text-decoration: none;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.tab-link:hover,
+.tab-link.active {
+  background: var(--surface);
+  color: var(--foreground);
+}
+
+.tab-link.active {
+  box-shadow: 0 1px 6px color-mix(in oklch, var(--foreground), transparent 92%);
+}
+
+.source-pill {
+  border: 1px solid color-mix(in oklch, var(--primary), white 58%);
+  border-radius: 999px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+.map-stage {
+  position: relative;
+  min-height: 560px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.map-canvas {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  width: min(700px, calc(100% - 72px));
+  aspect-ratio: 1023 / 780;
+  transform: translateX(-50%);
+}
+
+.china-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.map-raster {
+  image-rendering: auto;
+}
+
+.map-land,
+.map-island {
+  fill: oklch(0.94 0.01 215);
+  stroke: oklch(0.68 0.025 215);
+  stroke-width: 1.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.map-island {
+  fill: oklch(0.955 0.008 215);
+}
+
+.map-boundary {
+  fill: none;
+  stroke: oklch(0.72 0.02 215);
+  stroke-width: 1.15;
+  vector-effect: non-scaling-stroke;
+}
+
+.map-boundary.muted {
+  stroke: oklch(0.80 0.012 215);
+}
+
+.south-sea-inset rect {
+  fill: color-mix(in oklch, var(--surface), var(--surface-muted) 55%);
+  stroke: oklch(0.74 0.018 215);
+  stroke-width: 1;
+}
+
+.south-sea-inset circle {
+  fill: oklch(0.60 0.05 190);
+}
+
+.map-source {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  border: 1px solid color-mix(in oklch, var(--border), var(--foreground) 5%);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--surface), white 22%);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 8px;
+}
+
+.station-marker {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  transform: translate(-50%, -50%);
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  outline-color: var(--focus);
+  outline-offset: 6px;
+  padding: 0;
+}
+
+.marker-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--muted-foreground), white 12%);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--muted-foreground), transparent 72%);
+  transform: translate(-50%, -50%);
+}
+
+.station-marker.selected .marker-dot {
+  background: var(--station-color);
+  box-shadow: 0 0 0 7px color-mix(in oklch, var(--station-color), transparent 76%);
+}
+
+.marker-label {
+  position: absolute;
+  left: var(--label-x, 16px);
+  top: var(--label-y, -22px);
+  min-width: 126px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--surface), white 30%);
+  box-shadow: 0 8px 24px color-mix(in oklch, var(--foreground), transparent 92%);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.marker-label strong,
+.marker-label span {
+  display: block;
+}
+
+.marker-label span:last-child {
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.station-marker:hover .marker-label,
+.station-marker:focus-visible .marker-label,
+.station-marker.selected .marker-label {
+  border-color: color-mix(in oklch, var(--primary), white 42%);
+}
+
+.link-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 0 14px;
+  text-decoration: none;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+
+.link-button:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.metric-readout {
+  min-height: 96px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--surface), var(--surface-muted) 45%);
+  padding: 14px;
+}
+
+.metric-readout strong {
+  display: block;
+  color: var(--metric-color);
+  font-size: 29px;
+  font-weight: 600;
+  line-height: 1.05;
+}
+
+.metric-readout small {
+  margin-left: 3px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.metric-readout span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.metric-readout em {
+  color: var(--foreground);
+  font-style: normal;
+}
+
+.filter-bar {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.summary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.data-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th,
+.data-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.data-table th {
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+
+.recharts-cartesian-axis-tick text {
+  fill: var(--muted-foreground);
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .station-marker.selected .marker-dot {
+    animation: marker-pulse 900ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+@keyframes marker-pulse {
+  from {
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--station-color), transparent 70%);
+  }
+  to {
+    box-shadow: 0 0 0 7px color-mix(in oklch, var(--station-color), transparent 76%);
+  }
+}
+
+@media (max-width: 920px) {
+  .map-stage {
+    min-height: 430px;
+  }
+
+  .map-canvas {
+    top: 74px;
+    width: min(360px, calc(100% - 40px));
+  }
+
+  .map-source {
+    left: 12px;
+    right: auto;
+    bottom: 10px;
+    max-width: calc(100% - 24px);
+    white-space: nowrap;
+  }
+
+  .marker-label {
+    min-width: 112px;
+    max-width: 128px;
+    padding: 8px 9px;
+  }
+
+  .station-tangshan {
+    --label-x: 0 !important;
+    --label-y: -104px !important;
+  }
+
+  .station-shanghai {
+    --label-x: -118px !important;
+    --label-y: 34px !important;
+  }
+
+  .metric-grid,
+  .chart-grid,
+  .summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-bar {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .filter-bar > * {
+    width: 100%;
+  }
+
+  .marker-label {
+    min-width: 104px;
+  }
+}
