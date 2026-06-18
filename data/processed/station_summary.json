@@ -1,0 +1,35 @@
+[
+  {
+    "station_id": "beijing",
+    "station_name": "北京",
+    "records": 168,
+    "avg_temperature": 24.89,
+    "min_temperature": 16.7,
+    "max_temperature": 33.3,
+    "avg_humidity": 63.98,
+    "avg_pressure": 1001.99,
+    "avg_wind_speed": 1.61
+  },
+  {
+    "station_id": "shanghai",
+    "station_name": "上海",
+    "records": 168,
+    "avg_temperature": 24.7,
+    "min_temperature": 19.6,
+    "max_temperature": 34.5,
+    "avg_humidity": 73.49,
+    "avg_pressure": 1009.44,
+    "avg_wind_speed": 2.61
+  },
+  {
+    "station_id": "tangshan",
+    "station_name": "唐山",
+    "records": 168,
+    "avg_temperature": 22.91,
+    "min_temperature": 15.7,
+    "max_temperature": 30.1,
+    "avg_humidity": 76.42,
+    "avg_pressure": 1004.01,
+    "avg_wind_speed": 2.28
+  }
+]

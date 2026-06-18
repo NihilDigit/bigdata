@@ -1,0 +1,19 @@
+{
+  "fetched_at": "2026-06-18T17:40:17+08:00",
+  "record_count": 504,
+  "station_count": 3,
+  "historical_range": {
+    "start_date": "2026-06-11",
+    "end_date": "2026-06-17"
+  },
+  "current_sources": {
+    "tangshan": "https://api.open-meteo.com/v1/forecast?latitude=39.63&longitude=118.18&current=temperature_2m%2Crelative_humidity_2m%2Csurface_pressure%2Cwind_speed_10m%2Cwind_direction_10m%2Cweather_code&hourly=temperature_2m%2Crelative_humidity_2m%2Csurface_pressure%2Cwind_speed_10m%2Cwind_direction_10m%2Cweather_code&past_days=7&forecast_days=1&wind_speed_unit=ms&timezone=Asia%2FShanghai",
+    "beijing": "https://api.open-meteo.com/v1/forecast?latitude=39.9&longitude=116.4&current=temperature_2m%2Crelative_humidity_2m%2Csurface_pressure%2Cwind_speed_10m%2Cwind_direction_10m%2Cweather_code&hourly=temperature_2m%2Crelative_humidity_2m%2Csurface_pressure%2Cwind_speed_10m%2Cwind_direction_10m%2Cweather_code&past_days=7&forecast_days=1&wind_speed_unit=ms&timezone=Asia%2FShanghai",
+    "shanghai": "https://api.open-meteo.com/v1/forecast?latitude=31.23&longitude=121.47&current=temperature_2m%2Crelative_humidity_2m%2Csurface_pressure%2Cwind_speed_10m%2Cwind_direction_10m%2Cweather_code&hourly=temperature_2m%2Crelative_humidity_2m%2Csurface_pressure%2Cwind_speed_10m%2Cwind_direction_10m%2Cweather_code&past_days=7&forecast_days=1&wind_speed_unit=ms&timezone=Asia%2FShanghai"
+  },
+  "historical_sources": {
+    "tangshan": "https://archive-api.open-meteo.com/v1/archive?latitude=39.63&longitude=118.18&start_date=2026-06-11&end_date=2026-06-17&hourly=temperature_2m%2Crelative_humidity_2m%2Csurface_pressure%2Cwind_speed_10m%2Cwind_direction_10m%2Cweather_code&wind_speed_unit=ms&timezone=Asia%2FShanghai",
+    "beijing": "https://archive-api.open-meteo.com/v1/archive?latitude=39.9&longitude=116.4&start_date=2026-06-11&end_date=2026-06-17&hourly=temperature_2m%2Crelative_humidity_2m%2Csurface_pressure%2Cwind_speed_10m%2Cwind_direction_10m%2Cweather_code&wind_speed_unit=ms&timezone=Asia%2FShanghai",
+    "shanghai": "https://archive-api.open-meteo.com/v1/archive?latitude=31.23&longitude=121.47&start_date=2026-06-11&end_date=2026-06-17&hourly=temperature_2m%2Crelative_humidity_2m%2Csurface_pressure%2Cwind_speed_10m%2Cwind_direction_10m%2Cweather_code&wind_speed_unit=ms&timezone=Asia%2FShanghai"
+  }
+}

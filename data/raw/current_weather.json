@@ -1,0 +1,41 @@
+[
+  {
+    "id": "tangshan",
+    "name": "唐山",
+    "latitude": 39.63,
+    "longitude": 118.18,
+    "time": "2026-06-18T17:30",
+    "temperature": 28.2,
+    "humidity": 67,
+    "pressure": 1000.3,
+    "wind_speed": 2.83,
+    "wind_direction": 159,
+    "weather_code": 3
+  },
+  {
+    "id": "beijing",
+    "name": "北京",
+    "latitude": 39.9,
+    "longitude": 116.4,
+    "time": "2026-06-18T17:30",
+    "temperature": 31.5,
+    "humidity": 52,
+    "pressure": 997.6,
+    "wind_speed": 1.74,
+    "wind_direction": 192,
+    "weather_code": 95
+  },
+  {
+    "id": "shanghai",
+    "name": "上海",
+    "latitude": 31.23,
+    "longitude": 121.47,
+    "time": "2026-06-18T17:30",
+    "temperature": 26.6,
+    "humidity": 77,
+    "pressure": 1006.6,
+    "wind_speed": 2.48,
+    "wind_direction": 99,
+    "weather_code": 2
+  }
+]

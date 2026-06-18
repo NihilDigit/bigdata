@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Weather Lab</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <p class="eyebrow">气象大数据计算与可视化系统</p>
+          <h1>Weather Lab</h1>
+        </div>
+        <nav class="view-tabs" aria-label="页面视图">
+          <button class="tab active" data-view="overview" type="button">总览</button>
+          <button class="tab" data-view="detail" type="button">详细数据</button>
+          <button class="tab" data-view="system" type="button">系统状态</button>
+        </nav>
+        <div class="topbar-actions">
+          <a class="text-button secondary" id="exportLink" href="/api/export/weather_observations.csv">导出 CSV</a>
+          <button class="icon-button" id="refreshButton" title="刷新数据" aria-label="刷新数据">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M17 3v4h4M7 21v-4H3" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="status-line" id="statusLine">读取数据中</div>
+
+      <section id="overviewView" class="view active">
+        <section class="overview-grid">
+          <article class="map-panel" aria-label="站点总览">
+            <div class="section-head">
+              <div>
+                <h2>三站实时概览</h2>
+                <p id="rangeText">读取数据中</p>
+              </div>
+              <span id="sourcePill" class="source-pill">USB + Open-Meteo</span>
+            </div>
+
+            <div class="map-stage">
+              <svg class="china-map" viewBox="0 0 760 520" role="img" aria-label="中国站点示意图">
+                <path
+                  class="map-shape"
+                  d="M155 128 L230 90 L319 101 L396 77 L470 104 L545 93 L618 143 L653 217 L623 294 L664 374 L601 424 L512 405 L438 444 L349 417 L286 445 L225 394 L153 382 L108 315 L127 242 L96 185 Z"
+                />
+                <path class="coast-line" d="M470 104 L500 154 L545 197 L569 270 L623 294 L601 424" />
+                <path class="river-line" d="M224 262 C300 235 358 249 428 224 C484 203 527 218 582 196" />
+              </svg>
+              <div class="station-marker" data-station="beijing" style="--x: 57%; --y: 36%">
+                <span class="marker-dot"></span>
+                <button class="marker-label" type="button"></button>
+              </div>
+              <div class="station-marker" data-station="tangshan" style="--x: 63%; --y: 33%">
+                <span class="marker-dot"></span>
+                <button class="marker-label" type="button"></button>
+              </div>
+              <div class="station-marker" data-station="shanghai" style="--x: 72%; --y: 62%">
+                <span class="marker-dot"></span>
+                <button class="marker-label" type="button"></button>
+              </div>
+            </div>
+          </article>
+
+          <aside class="station-panel" aria-label="站点当前数据">
+            <div class="section-head compact">
+              <h2>当前站点</h2>
+              <p id="selectedTime"></p>
+            </div>
+            <div class="station-list" id="stationList"></div>
+          </aside>
+        </section>
+
+        <section class="metrics-panel">
+          <div class="selected-head">
+            <div>
+              <p class="eyebrow">当前读数</p>
+              <h2 id="selectedName">唐山</h2>
+            </div>
+            <button class="text-button" id="openDetailButton" type="button">查看详细数据</button>
+          </div>
+          <div class="metric-grid" id="metricGrid"></div>
+        </section>
+      </section>
+
+      <section id="detailView" class="view">
+        <div class="filter-bar">
+          <label class="field">
+            <span>站点</span>
+            <select id="stationSelect"></select>
+          </label>
+          <label class="field">
+            <span>对比指标</span>
+            <select id="metricSelect"></select>
+          </label>
+          <a class="text-button secondary" id="stationExportLink" href="/api/export/weather_observations.csv">导出当前站点</a>
+        </div>
+
+        <section class="chart-grid">
+          <article class="chart-panel">
+            <div class="section-head">
+              <h2>温湿度趋势</h2>
+              <p>按各指标范围绘制</p>
+            </div>
+            <canvas id="temperatureHumidityChart" width="680" height="320"></canvas>
+          </article>
+          <article class="chart-panel">
+            <div class="section-head">
+              <h2>气压与风速</h2>
+              <p>按各指标范围绘制</p>
+            </div>
+            <canvas id="pressureWindChart" width="680" height="320"></canvas>
+          </article>
+          <article class="chart-panel wide">
+            <div class="section-head">
+              <h2>三站对比</h2>
+              <p id="comparisonCaption">温度</p>
+            </div>
+            <canvas id="comparisonChart" width="1080" height="340"></canvas>
+          </article>
+        </section>
+
+        <section class="summary-strip" id="summaryStrip"></section>
+
+        <section class="table-panel">
+          <div class="section-head">
+            <h2>数据记录</h2>
+            <p>当前站点最近 48 条小时记录</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>站点</th>
+                  <th>温度</th>
+                  <th>湿度</th>
+                  <th>气压</th>
+                  <th>风速</th>
+                  <th>风向</th>
+                  <th>天气代码</th>
+                </tr>
+              </thead>
+              <tbody id="recordsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="systemView" class="view">
+        <section class="system-grid">
+          <article class="system-panel">
+            <div class="section-head">
+              <h2>数据链路</h2>
+              <p>当前可验证状态</p>
+            </div>
+            <div class="pipeline" id="pipelineList"></div>
+          </article>
+          <article class="system-panel">
+            <div class="section-head">
+              <h2>数据规模</h2>
+              <p id="systemRange"></p>
+            </div>
+            <div class="count-grid" id="countGrid"></div>
+          </article>
+        </section>
+
+        <section class="table-panel">
+          <div class="section-head">
+            <h2>生成文件</h2>
+            <p>后端读取的本地结果文件</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>文件</th>
+                  <th>状态</th>
+                  <th>大小</th>
+                </tr>
+              </thead>
+              <tbody id="filesBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

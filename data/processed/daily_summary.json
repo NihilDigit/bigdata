@@ -1,0 +1,212 @@
+[
+  {
+    "station_id": "beijing",
+    "station_name": "北京",
+    "collect_date": "2026-06-11",
+    "records": 24,
+    "avg_temperature": 25.39,
+    "avg_humidity": 39.17,
+    "max_temperature": 31.3,
+    "min_temperature": 16.7
+  },
+  {
+    "station_id": "shanghai",
+    "station_name": "上海",
+    "collect_date": "2026-06-11",
+    "records": 24,
+    "avg_temperature": 26.48,
+    "avg_humidity": 53.46,
+    "max_temperature": 34.5,
+    "min_temperature": 19.6
+  },
+  {
+    "station_id": "tangshan",
+    "station_name": "唐山",
+    "collect_date": "2026-06-11",
+    "records": 24,
+    "avg_temperature": 22.03,
+    "avg_humidity": 62.75,
+    "max_temperature": 27.6,
+    "min_temperature": 15.7
+  },
+  {
+    "station_id": "beijing",
+    "station_name": "北京",
+    "collect_date": "2026-06-12",
+    "records": 24,
+    "avg_temperature": 28.38,
+    "avg_humidity": 40.75,
+    "max_temperature": 33.3,
+    "min_temperature": 23.1
+  },
+  {
+    "station_id": "shanghai",
+    "station_name": "上海",
+    "collect_date": "2026-06-12",
+    "records": 24,
+    "avg_temperature": 27.57,
+    "avg_humidity": 49.54,
+    "max_temperature": 34.0,
+    "min_temperature": 21.8
+  },
+  {
+    "station_id": "tangshan",
+    "station_name": "唐山",
+    "collect_date": "2026-06-12",
+    "records": 24,
+    "avg_temperature": 24.03,
+    "avg_humidity": 64.29,
+    "max_temperature": 30.1,
+    "min_temperature": 17.7
+  },
+  {
+    "station_id": "beijing",
+    "station_name": "北京",
+    "collect_date": "2026-06-13",
+    "records": 24,
+    "avg_temperature": 24.13,
+    "avg_humidity": 66.33,
+    "max_temperature": 28.8,
+    "min_temperature": 19.8
+  },
+  {
+    "station_id": "shanghai",
+    "station_name": "上海",
+    "collect_date": "2026-06-13",
+    "records": 24,
+    "avg_temperature": 24.06,
+    "avg_humidity": 71.08,
+    "max_temperature": 26.4,
+    "min_temperature": 20.6
+  },
+  {
+    "station_id": "tangshan",
+    "station_name": "唐山",
+    "collect_date": "2026-06-13",
+    "records": 24,
+    "avg_temperature": 21.7,
+    "avg_humidity": 83.0,
+    "max_temperature": 26.7,
+    "min_temperature": 19.1
+  },
+  {
+    "station_id": "beijing",
+    "station_name": "北京",
+    "collect_date": "2026-06-14",
+    "records": 24,
+    "avg_temperature": 23.2,
+    "avg_humidity": 68.58,
+    "max_temperature": 28.0,
+    "min_temperature": 18.0
+  },
+  {
+    "station_id": "shanghai",
+    "station_name": "上海",
+    "collect_date": "2026-06-14",
+    "records": 24,
+    "avg_temperature": 22.34,
+    "avg_humidity": 86.67,
+    "max_temperature": 24.1,
+    "min_temperature": 20.5
+  },
+  {
+    "station_id": "tangshan",
+    "station_name": "唐山",
+    "collect_date": "2026-06-14",
+    "records": 24,
+    "avg_temperature": 21.62,
+    "avg_humidity": 84.29,
+    "max_temperature": 25.1,
+    "min_temperature": 18.5
+  },
+  {
+    "station_id": "beijing",
+    "station_name": "北京",
+    "collect_date": "2026-06-15",
+    "records": 24,
+    "avg_temperature": 24.26,
+    "avg_humidity": 75.54,
+    "max_temperature": 28.9,
+    "min_temperature": 21.0
+  },
+  {
+    "station_id": "shanghai",
+    "station_name": "上海",
+    "collect_date": "2026-06-15",
+    "records": 24,
+    "avg_temperature": 23.29,
+    "avg_humidity": 86.21,
+    "max_temperature": 25.6,
+    "min_temperature": 21.7
+  },
+  {
+    "station_id": "tangshan",
+    "station_name": "唐山",
+    "collect_date": "2026-06-15",
+    "records": 24,
+    "avg_temperature": 22.92,
+    "avg_humidity": 80.96,
+    "max_temperature": 27.5,
+    "min_temperature": 19.5
+  },
+  {
+    "station_id": "beijing",
+    "station_name": "北京",
+    "collect_date": "2026-06-16",
+    "records": 24,
+    "avg_temperature": 23.74,
+    "avg_humidity": 84.29,
+    "max_temperature": 29.1,
+    "min_temperature": 21.4
+  },
+  {
+    "station_id": "shanghai",
+    "station_name": "上海",
+    "collect_date": "2026-06-16",
+    "records": 24,
+    "avg_temperature": 23.87,
+    "avg_humidity": 84.5,
+    "max_temperature": 26.9,
+    "min_temperature": 21.9
+  },
+  {
+    "station_id": "tangshan",
+    "station_name": "唐山",
+    "collect_date": "2026-06-16",
+    "records": 24,
+    "avg_temperature": 23.72,
+    "avg_humidity": 81.08,
+    "max_temperature": 27.9,
+    "min_temperature": 19.9
+  },
+  {
+    "station_id": "beijing",
+    "station_name": "北京",
+    "collect_date": "2026-06-17",
+    "records": 24,
+    "avg_temperature": 25.1,
+    "avg_humidity": 73.21,
+    "max_temperature": 30.0,
+    "min_temperature": 20.0
+  },
+  {
+    "station_id": "shanghai",
+    "station_name": "上海",
+    "collect_date": "2026-06-17",
+    "records": 24,
+    "avg_temperature": 25.32,
+    "avg_humidity": 82.96,
+    "max_temperature": 29.8,
+    "min_temperature": 21.5
+  },
+  {
+    "station_id": "tangshan",
+    "station_name": "唐山",
+    "collect_date": "2026-06-17",
+    "records": 24,
+    "avg_temperature": 24.32,
+    "avg_humidity": 78.58,
+    "max_temperature": 28.9,
+    "min_temperature": 20.1
+  }
+]

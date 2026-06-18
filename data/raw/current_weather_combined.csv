@@ -1,0 +1,4 @@
+time,id,name,latitude,longitude,temperature,humidity,pressure,wind_speed,wind_direction,weather_code,source
+2026-06-18T17:34:03+08:00,tangshan,唐山,39.63,118.18,23.0,43.0,1000.3,2.83,159,3,esp32_usb_open_meteo
+2026-06-18T17:30,beijing,北京,39.9,116.4,31.5,52,997.6,1.74,192,95,open_meteo
+2026-06-18T17:30,shanghai,上海,31.23,121.47,26.6,77,1006.6,2.48,99,2,open_meteo
