@@ -74,12 +74,18 @@ type HourlyRow = {
   weather_code: number;
 };
 
+type LiveRow = HourlyRow & {
+  source?: string;
+  sample_seq?: number;
+};
+
 type DashboardData = {
   stations: Array<{ id: string; name: string; latitude: number; longitude: number }>;
   metrics: Metric[];
   current: StationCurrent[];
   summary: Summary[];
   hourly: HourlyRow[];
+  tangshanLive: LiveRow[];
   meta: {
     historical_range: { start_date: string; end_date: string };
     record_count: number;
@@ -89,6 +95,7 @@ type DashboardData = {
 type MetricKey = "temperature" | "humidity" | "pressure" | "wind_speed" | "wind_direction";
 
 const stationOrder = ["tangshan", "beijing", "shanghai"];
+const refreshIntervalMs = 1000;
 const stationLabelOffset: Record<string, { x: string; y: string }> = {
   beijing: { x: "-148px", y: "-14px" },
   tangshan: { x: "24px", y: "-64px" },
@@ -143,6 +150,12 @@ function formatNumber(value: unknown, digits = 1) {
   return number.toFixed(digits).replace(/\.0$/, "");
 }
 
+function formatFixed(value: unknown, digits = 1) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "暂无";
+  return number.toFixed(digits);
+}
+
 function directionLabel(value: unknown) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "暂无";
@@ -151,7 +164,7 @@ function directionLabel(value: unknown) {
 }
 
 function sourceLabel(source: string) {
-  return source === "esp32_usb_open_meteo" ? "ESP32 + Open-Meteo" : "Open-Meteo";
+  return source.startsWith("esp32_") ? "ESP32 + Open-Meteo" : "Open-Meteo";
 }
 
 function weatherLabel(code: number) {
@@ -188,6 +201,27 @@ function toNumberRow(row: Record<string, string>): HourlyRow {
   };
 }
 
+function toLiveRow(row: Record<string, string>): LiveRow {
+  return {
+    ...toNumberRow(row),
+    source: row.source,
+    sample_seq: row.sample_seq ? Number(row.sample_seq) : undefined,
+  };
+}
+
+function formatClock(value: string | undefined) {
+  if (!value) return "暂无";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("zh-CN", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    fractionalSecondDigits: 3,
+  });
+}
+
 async function readJson<T>(url: string): Promise<T> {
   const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) throw new Error(`${url} HTTP ${response.status}`);
@@ -195,13 +229,15 @@ async function readJson<T>(url: string): Promise<T> {
 }
 
 async function fetchDashboard(): Promise<DashboardData> {
-  const [current, metrics, summary, records] = await Promise.all([
+  const [current, metrics, summary, records, tangshanLiveRows] = await Promise.all([
     readJson<StationCurrent[]>("/api/stations/current"),
     readJson<Metric[]>("/api/metrics"),
     readJson<Summary[]>("/api/analysis/summary"),
     readJson<Array<Record<string, string>>>("/api/records?limit=504"),
+    readJson<Array<Record<string, string>>>("/api/stations/tangshan/live?seconds=300"),
   ]);
   const hourly = records.map(toNumberRow);
+  const tangshanLive = tangshanLiveRows.map(toLiveRow);
   const times = hourly.map((row) => row.collect_time).sort();
   return {
     stations: current.map(({ id, name, latitude, longitude }) => ({ id, name, latitude, longitude })),
@@ -209,6 +245,7 @@ async function fetchDashboard(): Promise<DashboardData> {
     current,
     summary,
     hourly,
+    tangshanLive,
     meta: {
       historical_range: {
         start_date: times[0]?.slice(0, 10) ?? "暂无",
@@ -260,13 +297,16 @@ export function WeatherDashboard({ view }: { view: ViewName }) {
   const [selectedStation, setSelectedStation] = useState("tangshan");
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>("temperature");
   const [status, setStatus] = useState("读取数据中");
+  const [lastLoadedAt, setLastLoadedAt] = useState<string>("");
 
   const load = async () => {
     setStatus("读取数据中");
     try {
       const nextData = await fetchDashboard();
       setData(nextData);
-      setStatus("数据已更新");
+      const loadedAt = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+      setLastLoadedAt(loadedAt);
+      setStatus(`数据已更新 ${loadedAt}，每 1 秒自动刷新`);
     } catch (error) {
       setStatus(error instanceof Error ? `数据读取失败：${error.message}` : "数据读取失败");
     }
@@ -274,6 +314,13 @@ export function WeatherDashboard({ view }: { view: ViewName }) {
 
   useEffect(() => {
     void load();
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void load();
+    }, refreshIntervalMs);
+    return () => window.clearInterval(timer);
   }, []);
 
   const current = data?.current.find((item) => item.id === selectedStation) ?? data?.current[0];
@@ -299,6 +346,8 @@ export function WeatherDashboard({ view }: { view: ViewName }) {
           data={data}
           selected={current}
           selectedStation={selectedStation}
+          tangshanLive={data.tangshanLive}
+          lastLoadedAt={lastLoadedAt}
           onStationChange={setSelectedStation}
         />
       ) : (
@@ -307,6 +356,8 @@ export function WeatherDashboard({ view }: { view: ViewName }) {
           hourly={hourly}
           selectedStation={selectedStation}
           selectedMetric={selectedMetric}
+          tangshanLive={data.tangshanLive}
+          lastLoadedAt={lastLoadedAt}
           onStationChange={setSelectedStation}
           onMetricChange={setSelectedMetric}
         />
@@ -319,14 +370,19 @@ function Overview({
   data,
   selected,
   selectedStation,
+  tangshanLive,
+  lastLoadedAt,
   onStationChange,
 }: {
   data: DashboardData;
   selected: StationCurrent;
   selectedStation: string;
+  tangshanLive: LiveRow[];
+  lastLoadedAt: string;
   onStationChange: (station: string) => void;
 }) {
   const range = data.meta.historical_range;
+  const latestLive = tangshanLive.at(-1);
   return (
     <div className="grid gap-4">
       <Card className="p-5">
@@ -419,6 +475,24 @@ function Overview({
             </article>
           ))}
         </div>
+        <div className="live-panel">
+          <div>
+            <p className="eyebrow">ESP32 实时采样</p>
+            <strong>{latestLive ? `${formatFixed(latestLive.temperature)} °C / ${formatFixed(latestLive.humidity)}%` : "暂无实时样本"}</strong>
+            <span>
+              最新采样 {formatClock(latestLive?.collect_time)}
+              {latestLive?.sample_seq ? `，样本 #${latestLive.sample_seq}` : ""}，近 5 分钟 {tangshanLive.length} 条，页面刷新 {lastLoadedAt || "暂无"}
+            </span>
+          </div>
+          <div className="live-spark">
+            {tangshanLive.slice(-8).map((row) => (
+              <span key={`${row.collect_time}-${row.humidity}`} title={row.collect_time}>
+                {formatFixed(row.temperature)}°/{formatFixed(row.humidity)}%
+                {row.sample_seq ? ` #${row.sample_seq}` : ""}
+              </span>
+            ))}
+          </div>
+        </div>
       </Card>
     </div>
   );
@@ -429,6 +503,8 @@ function Detail({
   hourly,
   selectedStation,
   selectedMetric,
+  tangshanLive,
+  lastLoadedAt,
   onStationChange,
   onMetricChange,
 }: {
@@ -436,6 +512,8 @@ function Detail({
   hourly: HourlyRow[];
   selectedStation: string;
   selectedMetric: MetricKey;
+  tangshanLive: LiveRow[];
+  lastLoadedAt: string;
   onStationChange: (station: string) => void;
   onMetricChange: (metric: MetricKey) => void;
 }) {
@@ -558,6 +636,29 @@ function Detail({
           );
         })}
       </section>
+
+      <Card className="p-5">
+        <CardHeader>
+          <div>
+            <CardTitle>ESP32 实时采样</CardTitle>
+            <CardDescription>自动刷新于 {lastLoadedAt || "暂无"}，展示最近 5 分钟 TCP 采集记录</CardDescription>
+          </div>
+          <span className="source-pill">ESP32 + Open-Meteo</span>
+        </CardHeader>
+        <div className="live-record-grid">
+          {tangshanLive.slice(-10).reverse().map((row) => (
+            <article key={`${row.collect_time}-${row.humidity}`} className="live-record">
+              <strong>{formatClock(row.collect_time)}</strong>
+              {row.sample_seq ? <span>样本 #{row.sample_seq}</span> : null}
+              <span>{formatFixed(row.temperature)} °C</span>
+              <span>{formatFixed(row.humidity)}%</span>
+            </article>
+          ))}
+          {tangshanLive.length === 0 ? (
+            <p className="text-sm text-[color:var(--muted-foreground)]">暂无 ESP32 实时采样记录</p>
+          ) : null}
+        </div>
+      </Card>
 
       <Card className="p-5">
         <CardHeader>

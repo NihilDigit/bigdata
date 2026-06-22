@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -39,24 +39,53 @@ def write_json(path: Path, rows: list[dict[str, Any]]) -> None:
     path.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def main() -> int:
-    input_path = sys.argv[1] if len(sys.argv) > 1 else "/weathertextdb"
-    hdfs_output = sys.argv[2] if len(sys.argv) > 2 else "/weather_analysis"
-    local_output = Path(sys.argv[3]) if len(sys.argv) > 3 else Path("data/processed")
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_path", nargs="?", default="/weathertextdb")
+    parser.add_argument("hdfs_output", nargs="?", default="/weather_analysis")
+    parser.add_argument("local_output", nargs="?", default="data/processed")
+    parser.add_argument("--source", choices=["csv", "hive"], default="csv")
+    parser.add_argument("--hive-table", default="weather_table")
+    parser.add_argument("--window-seconds", type=int, default=10)
+    parser.add_argument("--compat-output", default="/weather_10secmean")
+    parser.add_argument("--no-compat-output", action="store_true")
+    return parser.parse_args()
 
-    spark = (
-        SparkSession.builder.appName("weather-lab-analysis")
-        .config("spark.sql.session.timeZone", "Asia/Shanghai")
-        .getOrCreate()
+
+def parse_collect_ts(weather: Any) -> Any:
+    return weather.withColumn(
+        "collect_ts",
+        F.coalesce(
+            F.to_timestamp("collect_time", "yyyy-MM-dd'T'HH:mm:ssXXX"),
+            F.to_timestamp("collect_time", "yyyy-MM-dd'T'HH:mm"),
+            F.to_timestamp("collect_time", "yyyy-MM-dd HH:mm:ss.SSSSSS"),
+            F.to_timestamp("collect_time", "yyyy-MM-dd HH:mm:ss"),
+        ),
     )
 
+
+def read_weather(spark: SparkSession, args: argparse.Namespace) -> Any:
+    if args.source == "hive":
+        return spark.table(args.hive_table)
+    return spark.read.schema(SCHEMA).option("header", "false").csv(args.input_path)
+
+
+def main() -> int:
+    args = parse_args()
+    local_output = Path(args.local_output)
+
+    builder = (
+        SparkSession.builder.appName("weather-lab-analysis")
+        .config("spark.sql.session.timeZone", "Asia/Shanghai")
+        .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
+    )
+    if args.source == "hive":
+        builder = builder.enableHiveSupport()
+    spark = builder.getOrCreate()
+
     try:
-        weather = (
-            spark.read.schema(SCHEMA)
-            .option("header", "false")
-            .csv(input_path)
-            .withColumn("collect_ts", F.to_timestamp("collect_time", "yyyy-MM-dd'T'HH:mm"))
-            .withColumn("collect_date", F.to_date("collect_ts"))
+        weather = parse_collect_ts(read_weather(spark, args)).withColumn(
+            "collect_date", F.to_date("collect_ts")
         )
 
         station_summary = (
@@ -85,27 +114,56 @@ def main() -> int:
             .orderBy("collect_date", "station_id")
         )
 
-        hourly_series = weather.select(
-            "collect_time",
-            "station_id",
-            "station_name",
-            "temperature",
-            "humidity",
-            "pressure",
-            "wind_speed",
-            "wind_direction",
-            "weather_code",
-        ).orderBy("collect_time", "station_id")
+        window_mean = (
+            weather.where(F.col("collect_ts").isNotNull())
+            .groupBy(
+                "station_id",
+                "station_name",
+                F.window("collect_ts", f"{args.window_seconds} seconds").alias("time_window"),
+            )
+            .agg(
+                F.round(F.avg("temperature"), 2).alias("temperature"),
+                F.round(F.avg("humidity"), 2).alias("humidity"),
+                F.round(F.avg("pressure"), 2).alias("pressure"),
+                F.round(F.avg("wind_speed"), 2).alias("wind_speed"),
+                F.round(F.avg("wind_direction"), 2).alias("wind_direction"),
+                F.round(F.avg("weather_code")).cast("int").alias("weather_code"),
+            )
+            .select(
+                F.date_format(F.col("time_window.start"), "yyyy-MM-dd'T'HH:mm:ss").alias(
+                    "collect_time"
+                ),
+                "station_id",
+                "station_name",
+                "temperature",
+                "humidity",
+                "pressure",
+                "wind_speed",
+                "wind_direction",
+                "weather_code",
+            )
+            .orderBy("collect_time", "station_id")
+        )
 
         station_summary.write.mode("overwrite").option("header", "true").csv(
-            f"{hdfs_output}/summary"
+            f"{args.hdfs_output}/summary"
         )
         daily_summary.write.mode("overwrite").option("header", "true").csv(
-            f"{hdfs_output}/daily_summary"
+            f"{args.hdfs_output}/daily_summary"
         )
-        hourly_series.write.mode("overwrite").option("header", "true").csv(
-            f"{hdfs_output}/window_mean"
+        window_mean.write.mode("overwrite").option("header", "true").csv(
+            f"{args.hdfs_output}/window_mean"
         )
+        if not args.no_compat_output:
+            window_mean.select(
+                "collect_time",
+                "station_name",
+                "temperature",
+                "humidity",
+                "pressure",
+                "wind_speed",
+                "wind_direction",
+            ).write.mode("overwrite").option("header", "true").csv(args.compat_output)
 
         write_json(
             local_output / "station_summary.json",
@@ -117,12 +175,16 @@ def main() -> int:
         )
         write_json(
             local_output / "hourly_series.json",
-            [row_to_dict(row) for row in hourly_series.collect()],
+            [row_to_dict(row) for row in window_mean.collect()],
         )
 
-        print(f"input={input_path}")
-        print(f"hdfs_output={hdfs_output}")
+        print(f"source={args.source}")
+        print(f"input={args.hive_table if args.source == 'hive' else args.input_path}")
+        print(f"hdfs_output={args.hdfs_output}")
+        if not args.no_compat_output:
+            print(f"compat_output={args.compat_output}")
         print(f"local_output={local_output.resolve()}")
+        print(f"window_seconds={args.window_seconds}")
         print(f"records={weather.count()}")
         station_summary.show(truncate=False)
         daily_summary.show(9, truncate=False)

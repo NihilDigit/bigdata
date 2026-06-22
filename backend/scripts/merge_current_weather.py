@@ -18,14 +18,20 @@ def read_latest_esp32(path: Path) -> dict[str, str]:
     return rows[-1]
 
 
+def read_latest_tangshan_sample() -> tuple[dict[str, str], str]:
+    live_path = RAW_DIR / "live_weather_observations.csv"
+    if live_path.exists():
+        return read_latest_esp32(live_path), "esp32_tcp_open_meteo"
+    return read_latest_esp32(RAW_DIR / "esp32_usb_samples.csv"), "esp32_usb_open_meteo"
+
+
 def main() -> int:
     current_path = RAW_DIR / "current_weather.json"
-    esp32_path = RAW_DIR / "esp32_usb_samples.csv"
     out_json = RAW_DIR / "current_weather_combined.json"
     out_csv = RAW_DIR / "current_weather_combined.csv"
 
     current = json.loads(current_path.read_text(encoding="utf-8"))
-    latest = read_latest_esp32(esp32_path)
+    latest, tangshan_source = read_latest_tangshan_sample()
 
     combined = []
     for item in current:
@@ -34,7 +40,7 @@ def main() -> int:
             record["time"] = latest["collect_time"]
             record["temperature"] = float(latest["temperature"])
             record["humidity"] = float(latest["humidity"])
-            record["source"] = "esp32_usb_open_meteo"
+            record["source"] = tangshan_source
         else:
             record["source"] = "open_meteo"
         combined.append(record)
@@ -43,6 +49,7 @@ def main() -> int:
     with out_csv.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(
             f,
+            lineterminator="\n",
             fieldnames=[
                 "time",
                 "id",

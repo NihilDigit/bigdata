@@ -1,0 +1,23 @@
+table_name = 'realtime_weather'
+create table_name, {NAME => 'data', TTL => 150} unless exists(table_name)
+alter table_name, {NAME => 'data', TTL => 150}
+put table_name, 'tangshan_20260623000801485', 'data:collect_time', '2026-06-23T00:08:01.485+08:00'
+put table_name, 'tangshan_20260623000801485', 'data:station_name', '唐山'
+put table_name, 'tangshan_20260623000801485', 'data:temperature', '24.0'
+put table_name, 'tangshan_20260623000801485', 'data:humidity', '34.0'
+put table_name, 'tangshan_20260623000801485', 'data:pressure', '1000.3'
+put table_name, 'tangshan_20260623000801485', 'data:wind_speed', '2.83'
+put table_name, 'tangshan_20260623000801485', 'data:wind_direction', '159.0'
+put table_name, 'tangshan_20260623000801485', 'data:weather_code', '3'
+put table_name, 'tangshan_20260623000801485', 'data:sample_seq', '43'
+put table_name, 'tangshan_20260623000802745', 'data:collect_time', '2026-06-23T00:08:02.745+08:00'
+put table_name, 'tangshan_20260623000802745', 'data:station_name', '唐山'
+put table_name, 'tangshan_20260623000802745', 'data:temperature', '29.0'
+put table_name, 'tangshan_20260623000802745', 'data:humidity', '34.0'
+put table_name, 'tangshan_20260623000802745', 'data:pressure', '1000.3'
+put table_name, 'tangshan_20260623000802745', 'data:wind_speed', '2.83'
+put table_name, 'tangshan_20260623000802745', 'data:wind_direction', '159.0'
+put table_name, 'tangshan_20260623000802745', 'data:weather_code', '3'
+put table_name, 'tangshan_20260623000802745', 'data:sample_seq', '44'
+scan table_name, {LIMIT => 10}
+exit

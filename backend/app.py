@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+from datetime import datetime, timedelta
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -56,6 +58,101 @@ def read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def parse_time(value: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return datetime.strptime(value, fmt)
+            except ValueError:
+                continue
+    return None
+
+
+def coerce_weather_row(row: dict[str, Any]) -> dict[str, Any]:
+    result = dict(row)
+    for key in ("temperature", "humidity", "pressure", "wind_speed", "wind_direction"):
+        if key in result and result[key] not in ("", None):
+            result[key] = float(result[key])
+    if result.get("weather_code") not in ("", None):
+        result["weather_code"] = int(float(result["weather_code"]))
+    if result.get("sample_seq") not in ("", None):
+        result["sample_seq"] = int(float(result["sample_seq"]))
+    return result
+
+
+def live_rows() -> list[dict[str, Any]]:
+    path = RAW_DIR / "live_weather_observations.csv"
+    if not path.exists():
+        return []
+    rows = []
+    for row in read_csv(path):
+        row.setdefault("source", "esp32_tcp_open_meteo")
+        rows.append(coerce_weather_row(row))
+    return rows
+
+
+def latest_live_by_station() -> dict[str, dict[str, Any]]:
+    latest: dict[str, tuple[datetime, dict[str, Any]]] = {}
+    for row in live_rows():
+        station_id = row.get("station_id")
+        collect_ts = parse_time(str(row.get("collect_time", "")))
+        if not station_id or not collect_ts:
+            continue
+        if station_id not in latest or collect_ts > latest[station_id][0]:
+            latest[station_id] = (collect_ts, row)
+    return {station_id: row for station_id, (_, row) in latest.items()}
+
+
+def hbase_current_by_station() -> dict[str, dict[str, Any]]:
+    try:
+        import happybase  # type: ignore[import-not-found]
+    except Exception:
+        return {}
+    try:
+        connection = happybase.Connection(
+            os.environ.get("HBASE_THRIFT_HOST", "127.0.0.1"),
+            port=int(os.environ.get("HBASE_THRIFT_PORT", "9090")),
+            timeout=1500,
+        )
+        table = connection.table(os.environ.get("HBASE_WEATHER_TABLE", "realtime_weather"))
+        latest: dict[str, tuple[str, dict[str, Any]]] = {}
+        station_meta = {station["id"]: station for station in STATIONS}
+        for key, data in table.scan(columns=[b"data"]):
+            row_key = key.decode("utf-8", errors="replace")
+            station_id = row_key.split("_", 1)[0]
+            values = {
+                column.decode("utf-8", errors="replace").split(":", 1)[1]: value.decode(
+                    "utf-8", errors="replace"
+                )
+                for column, value in data.items()
+            }
+            meta = station_meta.get(station_id, {})
+            record = {
+                "id": station_id,
+                "name": values.get("station_name", meta.get("name", station_id)),
+                "latitude": float(values.get("latitude", meta.get("latitude", 0))),
+                "longitude": float(values.get("longitude", meta.get("longitude", 0))),
+                "time": values.get("collect_time", ""),
+                "temperature": values.get("temperature", 0),
+                "humidity": values.get("humidity", 0),
+                "pressure": values.get("pressure", 0),
+                "wind_speed": values.get("wind_speed", 0),
+                "wind_direction": values.get("wind_direction", 0),
+                "weather_code": values.get("weather_code", 0),
+                "source": values.get("source", "hbase"),
+            }
+            record = coerce_weather_row(record)
+            collect_time = str(record.get("time", ""))
+            if station_id not in latest or collect_time > latest[station_id][0]:
+                latest[station_id] = (collect_time, record)
+        connection.close()
+        return {station_id: record for station_id, (_, record) in latest.items()}
+    except Exception:
+        return {}
+
+
 def station_ids() -> set[str]:
     return {station["id"] for station in STATIONS}
 
@@ -91,7 +188,30 @@ def favicon() -> Response:
 
 
 def current_weather() -> list[dict[str, Any]]:
-    return read_json(RAW_DIR / "current_weather_combined.json")
+    current = read_json(RAW_DIR / "current_weather_combined.json")
+    overlays = [hbase_current_by_station(), latest_live_by_station()]
+    if not any(overlays):
+        return current
+    merged = []
+    for item in current:
+        record = dict(item)
+        for overlay in overlays:
+            live = overlay.get(record["id"])
+            if live:
+                record.update(
+                    {
+                        "time": live.get("time", live.get("collect_time")),
+                        "temperature": live["temperature"],
+                        "humidity": live["humidity"],
+                        "pressure": live["pressure"],
+                        "wind_speed": live["wind_speed"],
+                        "wind_direction": live["wind_direction"],
+                        "weather_code": live["weather_code"],
+                        "source": live.get("source", "hbase"),
+                    }
+                )
+        merged.append(record)
+    return merged
 
 
 @app.get("/api/stations/current")
@@ -166,6 +286,14 @@ def analysis_trends(
 @app.get("/api/stations/{station_id}/live")
 def station_live(station_id: str, seconds: int = Query(default=150, ge=10, le=3600)) -> list[dict[str, Any]]:
     ensure_station(station_id)
+    live = [row for row in live_rows() if row.get("station_id") == station_id]
+    timed_live = [(parse_time(str(row.get("collect_time", ""))), row) for row in live]
+    timed_live = [(ts, row) for ts, row in timed_live if ts is not None]
+    if timed_live:
+        timed_live.sort(key=lambda item: item[0])
+        newest = max(ts for ts, _ in timed_live)
+        cutoff = newest - timedelta(seconds=seconds)
+        return [row for ts, row in timed_live if ts >= cutoff]
     rows = filter_station(read_json(PROCESSED_DIR / "hourly_series.json"), station_id)
     return rows[-min(len(rows), max(1, seconds // 10)) :]
 

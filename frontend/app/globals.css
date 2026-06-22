@@ -301,6 +301,82 @@ a {
   font-style: normal;
 }
 
+.live-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, auto);
+  gap: 16px;
+  align-items: center;
+  margin-top: 16px;
+  border: 1px solid color-mix(in oklch, var(--primary), white 58%);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--primary), white 93%);
+  padding: 14px;
+}
+
+.live-panel strong {
+  display: block;
+  color: var(--primary);
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.live-panel span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.live-spark {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.live-spark span,
+.live-record {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.live-spark span {
+  min-width: 66px;
+  padding: 7px 8px;
+  color: var(--foreground);
+  text-align: center;
+}
+
+.live-record-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.live-record {
+  min-height: 76px;
+  padding: 11px 12px;
+}
+
+.live-record strong,
+.live-record span {
+  display: block;
+}
+
+.live-record strong {
+  font-size: 13px;
+}
+
+.live-record span {
+  margin-top: 5px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
 .filter-bar {
   display: flex;
   align-items: end;
@@ -395,8 +471,14 @@ a {
 
   .metric-grid,
   .chart-grid,
-  .summary-strip {
+  .summary-strip,
+  .live-panel,
+  .live-record-grid {
     grid-template-columns: 1fr;
+  }
+
+  .live-spark {
+    justify-content: flex-start;
   }
 
   .filter-bar {

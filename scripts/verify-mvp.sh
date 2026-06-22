@@ -47,10 +47,19 @@ echo "== HDFS and Spark outputs =="
 ./scripts/distro-bigdata.sh "hdfs dfs -ls /weathertextdb; hdfs dfs -ls /weather_analysis; hdfs dfs -cat /weather_analysis/summary/part-* | sed -n '1,5p'"
 
 echo
+echo "== HDFS live file schema =="
+./scripts/distro-bigdata.sh 'for f in $(hdfs dfs -ls /weathertextdb/live_*.csv 2>/dev/null | awk "{print \$8}"); do cols=$(hdfs dfs -cat "$f" | head -n 1 | awk -F, "{print NF}"); echo "$f columns=$cols"; test "$cols" = "7"; done'
+
+echo
 echo "== HBase current table =="
 tmp_hbase_script="/tmp/weather_lab_hbase_scan.hbase"
 cat > "$tmp_hbase_script" <<'HBASE'
 scan 'realtime_weather', {LIMIT => 10}
 exit
 HBASE
-./scripts/distro-bigdata.sh "hbase shell -n $tmp_hbase_script"
+hbase_output="$(./scripts/distro-bigdata.sh "hbase shell -n $tmp_hbase_script")"
+printf "%s\n" "$hbase_output"
+if printf "%s\n" "$hbase_output" | grep -q "0 row(s)"; then
+  echo "HBase realtime_weather has no rows"
+  exit 1
+fi

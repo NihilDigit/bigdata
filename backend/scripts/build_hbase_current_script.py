@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 TABLE = "realtime_weather"
+TTL_SECONDS = 150
 
 
 def quote(value: object) -> str:
@@ -24,7 +25,8 @@ def main() -> int:
 
     lines = [
         f"table_name = {quote(TABLE)}",
-        "create table_name, 'data' unless exists(table_name)",
+        f"create table_name, {{NAME => 'data', TTL => {TTL_SECONDS}}} unless exists(table_name)",
+        f"alter table_name, {{NAME => 'data', TTL => {TTL_SECONDS}}}",
     ]
 
     for row in rows:
