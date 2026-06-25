@@ -2,34 +2,43 @@
   {
     "station_id": "beijing",
     "station_name": "北京",
-    "records": 168,
-    "avg_temperature": 24.89,
+    "records": 4170,
+    "avg_temperature": 30.49,
     "min_temperature": 16.7,
     "max_temperature": 33.3,
-    "avg_humidity": 63.98,
-    "avg_pressure": 1001.99,
-    "avg_wind_speed": 1.61
+    "avg_humidity": 30.93,
+    "avg_pressure": 1001.33,
+    "avg_wind_speed": 1.79,
+    "pressure_delta": 11.7,
+    "max_wind_speed": 4.58,
+    "dominant_wind_direction": 167.22
   },
   {
     "station_id": "shanghai",
     "station_name": "上海",
-    "records": 168,
-    "avg_temperature": 24.7,
+    "records": 4235,
+    "avg_temperature": 23.89,
     "min_temperature": 19.6,
     "max_temperature": 34.5,
-    "avg_humidity": 73.49,
-    "avg_pressure": 1009.44,
-    "avg_wind_speed": 2.61
+    "avg_humidity": 77.45,
+    "avg_pressure": 1006.17,
+    "avg_wind_speed": 2.1,
+    "pressure_delta": 13.3,
+    "max_wind_speed": 5.01,
+    "dominant_wind_direction": 65.62
   },
   {
     "station_id": "tangshan",
     "station_name": "唐山",
-    "records": 168,
-    "avg_temperature": 22.91,
+    "records": 3130,
+    "avg_temperature": 24.48,
     "min_temperature": 15.7,
     "max_temperature": 30.1,
-    "avg_humidity": 76.42,
-    "avg_pressure": 1004.01,
-    "avg_wind_speed": 2.28
+    "avg_humidity": 41.91,
+    "avg_pressure": 1002.65,
+    "avg_wind_speed": 2.39,
+    "pressure_delta": 10.0,
+    "max_wind_speed": 5.61,
+    "dominant_wind_direction": 243.04
   }
 ]

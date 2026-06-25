@@ -1,12 +1,13 @@
 # 气象大数据采集、分析与可视化系统
 
-本项目实现唐山、北京、上海三个站点的气象数据采集、存储、计算和可视化展示。实现范围按 `设计文档.md` 组织：ESP32-C3 + DHT11 采集，TCP 采集服务，HBase/HDFS/Hive/Spark 数据链路，以及 FastAPI + Next.js 可视化。
+本项目实现唐山、北京、上海三个站点的气象数据采集、存储、计算和可视化展示。实现范围按 `设计文档.md` 组织：ESP32-C3 + DHT11 无线采集，三站 WebSocket 采集服务，HBase/HDFS/Hive/Spark 数据链路，以及 FastAPI + Next.js 可视化。
 
 ## 数据来源
 
-- 唐山当前温湿度：ESP32-C3 + DHT11，当前实物数据口为 GPIO4；正式演示走 Wi-Fi/TCP，USB 串口用于刷写、上传和调试。
-- 唐山、北京、上海历史数据：Open-Meteo Archive API，当前数据补充来自 Open-Meteo Forecast API。
-- 历史范围：`2026-06-11` 至 `2026-06-17`，共 7 天、504 条小时记录。
+- 唐山当前温湿度：ESP32-C3 + DHT11，当前实物数据口为 GPIO4；正式演示走 Wi-Fi/WebSocket，USB 串口仅用于刷写、上传和调试日志。
+- 北京、上海当前数据：Open-Meteo 当前真实值 + 小幅扰动，以 WebSocket Client 每秒推送。
+- 唐山、北京、上海历史数据：Open-Meteo Archive API。
+- 历史范围：`2026-06-11T00:00` 至 `2026-06-24T23:00`，共 14 天、1008 条小时记录。
 
 ## 大数据组件
 
@@ -46,10 +47,11 @@ http://127.0.0.1:3000
 /api/export/weather_observations.csv
 ```
 
-前端包含两个页面：
+前端包含三个页面：
 
 - `总览`：地图、站点当前读数和五项指标。
-- `详细数据`：站点筛选、指标筛选、趋势图、统计摘要、三站对比、记录表和 CSV 导出。
+- `详情`：站点筛选、指标筛选、HBase 最近 150 秒实时趋势、Spark 历史趋势。
+- `对比分析`：三站对比图、统计摘要、记录表、CSV 导出和 Spark 手动刷新。
 
 ## ESP32 与采集服务
 
@@ -59,15 +61,17 @@ http://127.0.0.1:3000
 ESP32_SSID=<热点名称> ESP32_WIFI_KEY=<热点密码> ./scripts/upload-esp32-weatherstation.sh
 ```
 
-启动在线采集服务：
+启动在线采集服务和两个模拟站：
 
 ```bash
-python backend/scripts/weather_dataserver.py --station-host <ESP32_IP>
+uv run --with websockets --with happybase python backend/scripts/weather_dataserver.py --flush-size 3
+uv run --with websockets python backend/scripts/openmeteo_station_client.py beijing --ws-url ws://127.0.0.1:8080
+uv run --with websockets python backend/scripts/openmeteo_station_client.py shanghai --ws-url ws://127.0.0.1:8080
 ```
 
-采集服务接收 ESP32 的 TCP CSV 数据，合并 Open-Meteo 当前气压、风速、风向和天气代码，追加本地实时 CSV，并写入 HBase 和 HDFS。
+采集服务接收三站 WebSocket JSON 数据。唐山 ESP32 发送 DHT11 温湿度，服务器按 Open-Meteo 当前真实源补气压、风速、风向和天气码；北京、上海模拟站直接按 Open-Meteo 当前值加扰动生成全部字段。服务端追加本地实时 CSV，并并行写入 HBase 和 HDFS。
 
-前端总览页和详细数据页都会显示 `ESP32 实时采样` 区块。DHT11 本身为整数级温湿度传感器，因此页面用一位小数统一格式展示，同时显示毫秒级采样时间和 ESP32 递增样本号，用于证明实时数据正在更新。
+当前热点联调使用 `prometheus / abcdefgh`。ESP32 获得 `10.167.143.75`，主机为 `10.167.143.18`。若 ESP32 能 ping 通但 TCP 连接超时，需要确认 UFW 已放行 `wlan0` 上 `10.167.143.0/24 -> 8080/tcp`。
 
 ## Hive 与 Spark
 
@@ -105,7 +109,7 @@ python backend/scripts/weather_dataserver.py --station-host <ESP32_IP>
 ESP32_STATION_HOST=<ESP32_IP> ./scripts/verify-full.sh
 ```
 
-该脚本会额外检查设计覆盖入口、扩展 API、CSV 导出和 Next.js 两页渲染。
+该脚本会额外检查设计覆盖入口、扩展 API、CSV 导出和 Next.js 三页渲染。
 
 ## 报告
 
@@ -113,6 +117,7 @@ ESP32_STATION_HOST=<ESP32_IP> ./scripts/verify-full.sh
 
 ```text
 reports/实验报告.md
+reports/课程设计报告.md
 ```
 
 生成可浏览、可打印的 HTML 报告：

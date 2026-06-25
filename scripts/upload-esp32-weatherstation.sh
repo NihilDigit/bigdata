@@ -5,6 +5,8 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT="${ESP32_PORT:-/dev/ttyACM0}"
 SSID="${ESP32_SSID:?Set ESP32_SSID to the hotspot SSID}"
 WIFI_KEY="${ESP32_WIFI_KEY:?Set ESP32_WIFI_KEY to the hotspot password}"
+SERVER_HOST="${ESP32_SERVER_HOST:?Set ESP32_SERVER_HOST to this computer IP on the hotspot/LAN}"
+SERVER_PORT="${ESP32_SERVER_PORT:-8080}"
 DHT_PIN="${ESP32_DHT_PIN:-4}"
 TMP_MAIN="$(mktemp /tmp/weatherstation_main.XXXXXX.py)"
 
@@ -13,17 +15,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-python - "$PROJECT_ROOT/esp32/weatherstation_main.py" "$TMP_MAIN" "$SSID" "$WIFI_KEY" "$DHT_PIN" <<'PY'
+python - "$PROJECT_ROOT/esp32/weatherstation_main.py" "$TMP_MAIN" "$SSID" "$WIFI_KEY" "$SERVER_HOST" "$SERVER_PORT" "$DHT_PIN" <<'PY'
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-src, dst, ssid, wifi_key, dht_pin = sys.argv[1:6]
+src, dst, ssid, wifi_key, server_host, server_port, dht_pin = sys.argv[1:8]
 text = Path(src).read_text(encoding="utf-8")
 replacements = {
     'SSID = "YOUR_WIFI_SSID"': f'SSID = "{ssid}"',
     'WIFI_KEY = "YOUR_WIFI_KEY"': f'WIFI_KEY = "{wifi_key}"',
+    'SERVER_HOST = "YOUR_SERVER_HOST"': f'SERVER_HOST = "{server_host}"',
+    "SERVER_PORT = 8080": f"SERVER_PORT = {int(server_port)}",
     "DHT_PIN = 4": f"DHT_PIN = {int(dht_pin)}",
 }
 for old, new in replacements.items():

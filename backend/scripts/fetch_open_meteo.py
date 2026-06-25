@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
-import sys
+import argparse
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -79,7 +79,7 @@ def normalize_number(value: object) -> str:
     return str(value)
 
 
-def write_outputs(out_dir: Path) -> None:
+def write_outputs(out_dir: Path, days: int) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     records_path = out_dir / "weather_observations.csv"
     current_path = out_dir / "current_weather.json"
@@ -90,7 +90,7 @@ def write_outputs(out_dir: Path) -> None:
     sources: dict[str, str] = {}
     historical_sources: dict[str, str] = {}
     end_date = date.today() - timedelta(days=1)
-    start_date = end_date - timedelta(days=6)
+    start_date = end_date - timedelta(days=days - 1)
 
     for station in STATIONS:
         url = build_url(station)
@@ -183,8 +183,13 @@ def write_outputs(out_dir: Path) -> None:
 
 
 def main() -> int:
-    out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("data/raw")
-    write_outputs(out_dir)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("out_dir", nargs="?", default="data/raw")
+    parser.add_argument("--days", type=int, default=14)
+    args = parser.parse_args()
+    if args.days < 1:
+        raise SystemExit("--days must be >= 1")
+    write_outputs(Path(args.out_dir), args.days)
     return 0
 
 

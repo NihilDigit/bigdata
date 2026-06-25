@@ -3,16 +3,17 @@ import dht
 import network
 import socket
 import time
+import ujson
 
 
 SSID = "YOUR_WIFI_SSID"
 WIFI_KEY = "YOUR_WIFI_KEY"
 STATION_ID = "tangshan"
 STATION_NAME = "唐山"
-HOST = "0.0.0.0"
-PORT = 8080
+SERVER_HOST = "YOUR_SERVER_HOST"
+SERVER_PORT = 8080
+SERVER_PATH = "/"
 DHT_PIN = 4
-CLIENT_MAX_RECORDS = 3
 
 
 def wifi_status_name(status):
@@ -63,38 +64,104 @@ def connect_wifi(ssid, wifi_key):
 
 def read_dht11(sensor):
     sensor.measure()
-    temperature = sensor.temperature()
-    humidity = sensor.humidity()
-    return temperature, humidity
+    return sensor.temperature(), sensor.humidity()
+
+
+def connect_ws():
+    print("websocket resolve host={} port={}".format(SERVER_HOST, SERVER_PORT))
+    addr = socket.getaddrinfo(SERVER_HOST, SERVER_PORT)[0][-1]
+    print("websocket connect addr={}".format(addr))
+    sock = socket.socket()
+    sock.settimeout(3)
+    sock.connect(addr)
+    print("websocket tcp connected")
+    key = "dGhlIHNhbXBsZSBub25jZQ=="
+    request = (
+        "GET {} HTTP/1.1\r\n"
+        "Host: {}:{}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: {}\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n"
+    ).format(SERVER_PATH, SERVER_HOST, SERVER_PORT, key)
+    print("websocket send handshake")
+    sock.send(request.encode("utf-8"))
+    response = b""
+    while b"\r\n\r\n" not in response:
+        print("websocket wait handshake response bytes={}".format(len(response)))
+        chunk = sock.recv(256)
+        if not chunk:
+            break
+        response += chunk
+    if b" 101 " not in response.split(b"\r\n", 1)[0]:
+        sock.close()
+        raise RuntimeError("websocket handshake failed: {}".format(response[:80]))
+    print("websocket connected {}:{}".format(SERVER_HOST, SERVER_PORT))
+    return sock
+
+
+def send_ws_text(sock, text, seq):
+    payload = text.encode("utf-8")
+    length = len(payload)
+    if length < 126:
+        header = bytes([0x81, 0x80 | length])
+    elif length < 65536:
+        header = bytes([0x81, 0x80 | 126, (length >> 8) & 0xFF, length & 0xFF])
+    else:
+        raise ValueError("payload too large")
+    mask = bytes([
+        seq & 0xFF,
+        (seq >> 8) & 0xFF,
+        time.ticks_ms() & 0xFF,
+        (time.ticks_ms() >> 8) & 0xFF,
+    ])
+    masked = bytes([payload[i] ^ mask[i % 4] for i in range(length)])
+    sock.send(header + mask + masked)
 
 
 def main():
     connect_wifi(SSID, WIFI_KEY)
     sensor = dht.DHT11(Pin(DHT_PIN, pull=Pin.PULL_UP))
     sample_seq = 0
-
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((HOST, PORT))
-    server.listen(2)
-    print("weather station started station={} port={} dht_pin={}".format(STATION_NAME, PORT, DHT_PIN))
+    sock = None
+    next_connect_ms = 0
+    print("weather station ws client station={} server={}:{} dht_pin={}".format(STATION_NAME, SERVER_HOST, SERVER_PORT, DHT_PIN))
 
     while True:
-        conn, addr = server.accept()
-        print("client connected {}".format(addr))
+        sample_seq += 1
         try:
-            for _ in range(CLIENT_MAX_RECORDS):
-                sample_seq += 1
-                temperature, humidity = read_dht11(sensor)
-                line = "{},{},{},{},{}\n".format(STATION_ID, STATION_NAME, temperature, humidity, sample_seq)
-                conn.send(line.encode("utf-8"))
-                print("send {}".format(line.strip()))
-                time.sleep(1)
-            print("client record limit reached, rotate connection")
+            temperature, humidity = read_dht11(sensor)
+            record = {
+                "station_id": STATION_ID,
+                "station_name": STATION_NAME,
+                "temperature": temperature,
+                "humidity": humidity,
+                "sample_seq": sample_seq,
+            }
+            line = ujson.dumps(record)
+            print("serial_json {}".format(line))
+            if sock is None and time.ticks_diff(time.ticks_ms(), next_connect_ms) >= 0:
+                try:
+                    sock = connect_ws()
+                except Exception as exc:
+                    print("websocket error {}, retry after 3s".format(exc))
+                    if sock:
+                        sock.close()
+                    sock = None
+                    next_connect_ms = time.ticks_add(time.ticks_ms(), 3000)
+            if sock is not None:
+                try:
+                    send_ws_text(sock, line, sample_seq)
+                    print("send {}".format(line))
+                except Exception as exc:
+                    print("websocket send error {}, reconnect later".format(exc))
+                    sock.close()
+                    sock = None
+                    next_connect_ms = time.ticks_add(time.ticks_ms(), 3000)
         except Exception as exc:
-            print("client disconnected {}".format(exc))
-        finally:
-            conn.close()
+            print("sensor loop error {}".format(exc))
+        time.sleep(1)
 
 
 main()

@@ -5,7 +5,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 api_port="${API_PORT:-8008}"
 web_port="${PORT:-3000}"
 
-UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}" uvx --with fastapi --with uvicorn uvicorn backend.app:app --host 127.0.0.1 --port "$api_port" &
+UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}" uvx --with fastapi --with uvicorn --with happybase uvicorn backend.app:app --host 127.0.0.1 --port "$api_port" &
 api_pid=$!
 
 cleanup() {

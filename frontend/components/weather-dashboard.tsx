@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
+  BarChart3,
   Cloud,
   CloudDrizzle,
   CloudLightning,
@@ -27,7 +28,8 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-type ViewName = "overview" | "detail";
+type ViewName = "overview" | "detail" | "analysis";
+type MetricKey = "temperature" | "humidity" | "pressure" | "wind_speed" | "wind_direction";
 
 type StationCurrent = {
   id: string;
@@ -41,7 +43,6 @@ type StationCurrent = {
   wind_speed: number;
   wind_direction: number;
   weather_code: number;
-  source: string;
 };
 
 type Metric = {
@@ -60,9 +61,12 @@ type Summary = {
   avg_humidity: number;
   avg_pressure: number;
   avg_wind_speed: number;
+  pressure_delta: number;
+  max_wind_speed: number;
+  dominant_wind_direction: number;
 };
 
-type HourlyRow = {
+type WeatherRow = {
   collect_time: string;
   station_id: string;
   station_name: string;
@@ -72,55 +76,54 @@ type HourlyRow = {
   wind_speed: number;
   wind_direction: number;
   weather_code: number;
-};
-
-type LiveRow = HourlyRow & {
-  source?: string;
   sample_seq?: number;
 };
 
 type DashboardData = {
-  stations: Array<{ id: string; name: string; latitude: number; longitude: number }>;
   metrics: Metric[];
   current: StationCurrent[];
   summary: Summary[];
-  hourly: HourlyRow[];
-  tangshanLive: LiveRow[];
+  records: WeatherRow[];
   meta: {
     historical_range: { start_date: string; end_date: string };
     record_count: number;
+    spark_completed_at: string | null;
   };
 };
 
-type MetricKey = "temperature" | "humidity" | "pressure" | "wind_speed" | "wind_direction";
+type SparkJobStatus = {
+  job_id: string | null;
+  status: "idle" | "running" | "succeeded" | "failed";
+  message: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  exit_code?: number | null;
+  pid?: number | null;
+  application_id?: string;
+  progress_percent?: number;
+  progress_label?: string;
+  tracking_url?: string;
+  log_tail?: string[];
+};
 
 const stationOrder = ["tangshan", "beijing", "shanghai"];
 const refreshIntervalMs = 1000;
 const stationLabelOffset: Record<string, { x: string; y: string }> = {
-  beijing: { x: "-148px", y: "-14px" },
-  tangshan: { x: "24px", y: "-64px" },
-  shanghai: { x: "20px", y: "-4px" },
+  beijing: { x: "-150px", y: "-82px" },
+  tangshan: { x: "20px", y: "-58px" },
+  shanghai: { x: "34px", y: "20px" },
 };
 
 const mapFrame = {
   width: 1023,
-  height: 780,
-  sourceHeight: 1149,
+  height: 1149,
 };
 
 const stationMapAnchor: Record<string, { x: number; y: number }> = {
-  beijing: { x: 692, y: 372 },
+  beijing: { x: 688, y: 376 },
   tangshan: { x: 718, y: 386 },
-  shanghai: { x: 825, y: 553 },
+  shanghai: { x: 820, y: 526 },
 };
-
-function stationMapPosition(station: Pick<StationCurrent, "id">) {
-  const { x, y } = stationMapAnchor[station.id];
-  return {
-    left: `${((x / mapFrame.width) * 100).toFixed(2)}%`,
-    top: `${((y / mapFrame.height) * 100).toFixed(2)}%`,
-  };
-}
 
 const metricColors: Record<MetricKey, string> = {
   temperature: "var(--metric-temperature)",
@@ -137,12 +140,19 @@ const stationColors: Record<string, string> = {
 };
 
 const metricReadouts: Array<[MetricKey, string, string, number]> = [
-  ["temperature", "温度", "°C", 1],
   ["humidity", "湿度", "%", 0],
-  ["pressure", "气压", "hPa", 1],
+  ["pressure", "气压", "hPa", 2],
   ["wind_speed", "风速", "m/s", 1],
-  ["wind_direction", "风向", "deg", 0],
+  ["wind_direction", "风向", "°", 0],
 ];
+
+function stationMapPosition(station: Pick<StationCurrent, "id">) {
+  const { x, y } = stationMapAnchor[station.id];
+  return {
+    left: `${((x / mapFrame.width) * 100).toFixed(2)}%`,
+    top: `${((y / mapFrame.height) * 100).toFixed(2)}%`,
+  };
+}
 
 function formatNumber(value: unknown, digits = 1) {
   const number = Number(value);
@@ -150,21 +160,11 @@ function formatNumber(value: unknown, digits = 1) {
   return number.toFixed(digits).replace(/\.0$/, "");
 }
 
-function formatFixed(value: unknown, digits = 1) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "暂无";
-  return number.toFixed(digits);
-}
-
 function directionLabel(value: unknown) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "暂无";
   const labels = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
   return labels[Math.round(number / 22.5) % 16];
-}
-
-function sourceLabel(source: string) {
-  return source.startsWith("esp32_") ? "ESP32 + Open-Meteo" : "Open-Meteo";
 }
 
 function weatherLabel(code: number) {
@@ -178,35 +178,13 @@ function weatherLabel(code: number) {
 }
 
 function WeatherIcon({ code, className }: { code: number; className?: string }) {
-  const props = { className: cn("h-4 w-4", className), "aria-hidden": true };
+  const props = { className: cn("h-5 w-5", className), "aria-hidden": true };
   if (code === 0) return <Sun {...props} />;
   if ([1, 2, 3].includes(code)) return <CloudSun {...props} />;
   if ([51, 53, 55].includes(code)) return <CloudDrizzle {...props} />;
   if ([61, 63, 65, 80, 81, 82].includes(code)) return <CloudRain {...props} />;
   if ([95, 96, 99].includes(code)) return <CloudLightning {...props} />;
   return <Cloud {...props} />;
-}
-
-function toNumberRow(row: Record<string, string>): HourlyRow {
-  return {
-    collect_time: row.collect_time,
-    station_id: row.station_id,
-    station_name: row.station_name,
-    temperature: Number(row.temperature),
-    humidity: Number(row.humidity),
-    pressure: Number(row.pressure),
-    wind_speed: Number(row.wind_speed),
-    wind_direction: Number(row.wind_direction),
-    weather_code: Number(row.weather_code),
-  };
-}
-
-function toLiveRow(row: Record<string, string>): LiveRow {
-  return {
-    ...toNumberRow(row),
-    source: row.source,
-    sample_seq: row.sample_seq ? Number(row.sample_seq) : undefined,
-  };
 }
 
 function formatClock(value: string | undefined) {
@@ -218,42 +196,70 @@ function formatClock(value: string | undefined) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    fractionalSecondDigits: 3,
   });
 }
 
-async function readJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { cache: "no-store" });
+function sparkComputedDescription(value: string | null | undefined) {
+  return `上次计算 ${formatClock(value ?? undefined)}`;
+}
+
+function toWeatherRow(row: Record<string, unknown>): WeatherRow {
+  return {
+    collect_time: String(row.collect_time ?? ""),
+    station_id: String(row.station_id ?? ""),
+    station_name: String(row.station_name ?? ""),
+    temperature: Number(row.temperature),
+    humidity: Number(row.humidity),
+    pressure: Number(row.pressure),
+    wind_speed: Number(row.wind_speed),
+    wind_direction: Number(row.wind_direction),
+    weather_code: Number(row.weather_code),
+    sample_seq: row.sample_seq == null || row.sample_seq === "" ? undefined : Number(row.sample_seq),
+  };
+}
+
+async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, { cache: "no-store", ...init });
   if (!response.ok) throw new Error(`${url} HTTP ${response.status}`);
   return (await response.json()) as T;
 }
 
 async function fetchDashboard(): Promise<DashboardData> {
-  const [current, metrics, summary, records, tangshanLiveRows] = await Promise.all([
+  const [current, metrics, summary, records, sparkStatus] = await Promise.all([
     readJson<StationCurrent[]>("/api/stations/current"),
     readJson<Metric[]>("/api/metrics"),
     readJson<Summary[]>("/api/analysis/summary"),
-    readJson<Array<Record<string, string>>>("/api/records?limit=504"),
-    readJson<Array<Record<string, string>>>("/api/stations/tangshan/live?seconds=300"),
+    readJson<Array<Record<string, unknown>>>("/api/hourly"),
+    readJson<SparkJobStatus>("/api/analysis/refresh/status").catch(() => null),
   ]);
-  const hourly = records.map(toNumberRow);
-  const tangshanLive = tangshanLiveRows.map(toLiveRow);
-  const times = hourly.map((row) => row.collect_time).sort();
+  const normalizedRecords = records.map(toWeatherRow);
+  const times = normalizedRecords.map((row) => row.collect_time).sort();
+  const sparkRecordCount = summary.reduce((total, item) => total + Number(item.records || 0), 0);
   return {
-    stations: current.map(({ id, name, latitude, longitude }) => ({ id, name, latitude, longitude })),
     metrics,
     current,
     summary,
-    hourly,
-    tangshanLive,
+    records: normalizedRecords,
     meta: {
       historical_range: {
         start_date: times[0]?.slice(0, 10) ?? "暂无",
         end_date: times.at(-1)?.slice(0, 10) ?? "暂无",
       },
-      record_count: hourly.length,
+      record_count: sparkRecordCount || normalizedRecords.length,
+      spark_completed_at: sparkStatus?.completed_at ?? null,
     },
   };
+}
+
+async function fetchLiveRows(stationId: string): Promise<WeatherRow[]> {
+  const rows = await readJson<Array<Record<string, unknown>>>(`/api/stations/${stationId}/live?seconds=150`);
+  return rows.map(toWeatherRow);
+}
+
+async function fetchHdfsRows(stationId: string): Promise<WeatherRow[]> {
+  const suffix = stationId === "all" ? "" : `&station_id=${stationId}`;
+  const rows = await readJson<Array<Record<string, unknown>>>(`/api/hdfs/records?limit=120${suffix}`);
+  return rows.map(toWeatherRow);
 }
 
 function Shell({
@@ -268,25 +274,27 @@ function Shell({
   children: React.ReactNode;
 }) {
   return (
-    <main className="mx-auto max-w-[1220px] px-6 py-7 max-[720px]:px-4">
-      <header className="mb-4 grid grid-cols-[minmax(180px,1fr)_auto_auto] items-center gap-4 max-[820px]:grid-cols-1">
+    <main className="app-shell">
+      <header className="app-header">
         <div>
-          <p className="eyebrow">气象大数据计算与可视化系统</p>
-          <h1 className="m-0 text-xl font-semibold tracking-normal">Weather Lab</h1>
+          <h1 className="m-0 text-xl font-semibold tracking-normal">气象大数据计算与可视化系统</h1>
         </div>
         <nav className="view-tabs" aria-label="页面视图">
           <Link className={cn("tab-link", view === "overview" && "active")} href="/">
             总览
           </Link>
           <Link className={cn("tab-link", view === "detail" && "active")} href="/detail">
-            详细数据
+            详情
+          </Link>
+          <Link className={cn("tab-link", view === "analysis" && "active")} href="/analysis">
+            对比分析
           </Link>
         </nav>
         <Button variant="outline" size="icon" onClick={onRefresh} aria-label="刷新数据" title="刷新数据">
           <RefreshCw className="h-4 w-4" />
         </Button>
       </header>
-      <div className="mb-3 min-h-6 text-xs font-medium text-[color:var(--muted-foreground)]">{status}</div>
+      {status ? <div className="status-line">{status}</div> : null}
       {children}
     </main>
   );
@@ -294,19 +302,19 @@ function Shell({
 
 export function WeatherDashboard({ view }: { view: ViewName }) {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [liveRows, setLiveRows] = useState<WeatherRow[]>([]);
+  const [hdfsRows, setHdfsRows] = useState<WeatherRow[]>([]);
   const [selectedStation, setSelectedStation] = useState("tangshan");
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>("temperature");
-  const [status, setStatus] = useState("读取数据中");
-  const [lastLoadedAt, setLastLoadedAt] = useState<string>("");
+  const [recordStation, setRecordStation] = useState("all");
+  const [status, setStatus] = useState("");
 
   const load = async () => {
-    setStatus("读取数据中");
     try {
-      const nextData = await fetchDashboard();
+      const [nextData, nextLive] = await Promise.all([fetchDashboard(), fetchLiveRows(selectedStation)]);
       setData(nextData);
-      const loadedAt = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-      setLastLoadedAt(loadedAt);
-      setStatus(`数据已更新 ${loadedAt}，每 1 秒自动刷新`);
+      setLiveRows(nextLive);
+      setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? `数据读取失败：${error.message}` : "数据读取失败");
     }
@@ -314,18 +322,32 @@ export function WeatherDashboard({ view }: { view: ViewName }) {
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [selectedStation]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       void load();
     }, refreshIntervalMs);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [selectedStation]);
+
+  useEffect(() => {
+    if (view !== "analysis") return undefined;
+    const loadHdfsRows = () => {
+      fetchHdfsRows(recordStation)
+        .then(setHdfsRows)
+        .catch((error) => {
+          setStatus(error instanceof Error ? `HDFS 数据读取失败：${error.message}` : "HDFS 数据读取失败");
+        });
+    };
+    loadHdfsRows();
+    const timer = window.setInterval(loadHdfsRows, 2000);
+    return () => window.clearInterval(timer);
+  }, [view, recordStation]);
 
   const current = data?.current.find((item) => item.id === selectedStation) ?? data?.current[0];
-  const hourly = useMemo(
-    () => data?.hourly.filter((item) => item.station_id === selectedStation) ?? [],
+  const historyRows = useMemo(
+    () => data?.records.filter((item) => item.station_id === selectedStation) ?? [],
     [data, selectedStation],
   );
 
@@ -346,22 +368,31 @@ export function WeatherDashboard({ view }: { view: ViewName }) {
           data={data}
           selected={current}
           selectedStation={selectedStation}
-          tangshanLive={data.tangshanLive}
-          lastLoadedAt={lastLoadedAt}
           onStationChange={setSelectedStation}
         />
-      ) : (
+      ) : null}
+      {view === "detail" ? (
         <Detail
           data={data}
-          hourly={hourly}
+          liveRows={liveRows}
+          historyRows={historyRows}
           selectedStation={selectedStation}
           selectedMetric={selectedMetric}
-          tangshanLive={data.tangshanLive}
-          lastLoadedAt={lastLoadedAt}
           onStationChange={setSelectedStation}
           onMetricChange={setSelectedMetric}
         />
-      )}
+      ) : null}
+      {view === "analysis" ? (
+        <Analysis
+          data={data}
+          selectedMetric={selectedMetric}
+          recordStation={recordStation}
+          hdfsRows={hdfsRows}
+          onMetricChange={setSelectedMetric}
+          onRecordStationChange={setRecordStation}
+          onRefresh={load}
+        />
+      ) : null}
     </Shell>
   );
 }
@@ -370,22 +401,17 @@ function Overview({
   data,
   selected,
   selectedStation,
-  tangshanLive,
-  lastLoadedAt,
   onStationChange,
 }: {
   data: DashboardData;
   selected: StationCurrent;
   selectedStation: string;
-  tangshanLive: LiveRow[];
-  lastLoadedAt: string;
   onStationChange: (station: string) => void;
 }) {
   const range = data.meta.historical_range;
-  const latestLive = tangshanLive.at(-1);
   return (
-    <div className="grid gap-4">
-      <Card className="p-5">
+    <div className="overview-layout">
+      <Card className="overview-map-card p-5">
         <CardHeader>
           <div>
             <CardTitle>三站实时概览</CardTitle>
@@ -393,7 +419,6 @@ function Overview({
               历史范围 {range.start_date} 至 {range.end_date}，共 {data.meta.record_count} 条
             </CardDescription>
           </div>
-          <span className="source-pill">{sourceLabel(selected.source)}</span>
         </CardHeader>
         <div className="map-stage">
           <div className="map-canvas">
@@ -409,7 +434,7 @@ function Overview({
                 x="0"
                 y="0"
                 width={mapFrame.width}
-                height={mapFrame.sourceHeight}
+                height={mapFrame.height}
                 preserveAspectRatio="xMidYMin meet"
               />
             </svg>
@@ -446,20 +471,19 @@ function Overview({
               );
             })}
           </div>
-          <div className="map-source">自然资源部标准地图服务系统，单色化展示</div>
         </div>
       </Card>
 
-      <Card className="p-5">
-        <div className="flex items-start justify-between gap-4 max-[720px]:flex-col">
+      <Card className="station-card overview-station-card">
+        <div className="station-card-main">
           <div>
-            <p className="eyebrow">当前读数</p>
-            <h2 className="m-0 text-base font-semibold">{selected.name}</h2>
-            <p className="mt-1 text-xs font-medium text-[color:var(--muted-foreground)]">{selected.time}</p>
+            <h2>{selected.name}</h2>
+            <div className="weather-state">
+              <WeatherIcon code={selected.weather_code} />
+              <span>{weatherLabel(selected.weather_code)}</span>
+            </div>
+            <strong>{formatNumber(selected.temperature)}°C</strong>
           </div>
-          <Link className="link-button" href="/detail">
-            查看详细数据
-          </Link>
         </div>
         <div className="metric-grid">
           {metricReadouts.map(([key, label, unit, digits]) => (
@@ -475,24 +499,6 @@ function Overview({
             </article>
           ))}
         </div>
-        <div className="live-panel">
-          <div>
-            <p className="eyebrow">ESP32 实时采样</p>
-            <strong>{latestLive ? `${formatFixed(latestLive.temperature)} °C / ${formatFixed(latestLive.humidity)}%` : "暂无实时样本"}</strong>
-            <span>
-              最新采样 {formatClock(latestLive?.collect_time)}
-              {latestLive?.sample_seq ? `，样本 #${latestLive.sample_seq}` : ""}，近 5 分钟 {tangshanLive.length} 条，页面刷新 {lastLoadedAt || "暂无"}
-            </span>
-          </div>
-          <div className="live-spark">
-            {tangshanLive.slice(-8).map((row) => (
-              <span key={`${row.collect_time}-${row.humidity}`} title={row.collect_time}>
-                {formatFixed(row.temperature)}°/{formatFixed(row.humidity)}%
-                {row.sample_seq ? ` #${row.sample_seq}` : ""}
-              </span>
-            ))}
-          </div>
-        </div>
       </Card>
     </div>
   );
@@ -500,40 +506,29 @@ function Overview({
 
 function Detail({
   data,
-  hourly,
+  liveRows,
+  historyRows,
   selectedStation,
   selectedMetric,
-  tangshanLive,
-  lastLoadedAt,
   onStationChange,
   onMetricChange,
 }: {
   data: DashboardData;
-  hourly: HourlyRow[];
+  liveRows: WeatherRow[];
+  historyRows: WeatherRow[];
   selectedStation: string;
   selectedMetric: MetricKey;
-  tangshanLive: LiveRow[];
-  lastLoadedAt: string;
   onStationChange: (station: string) => void;
   onMetricChange: (metric: MetricKey) => void;
 }) {
+  const currentStation = data.current.find((item) => item.id === selectedStation);
   const currentMetric = data.metrics.find((item) => item.id === selectedMetric) ?? data.metrics[0];
-  const comparisonRows = useMemo(() => {
-    const byTime = new Map<string, Record<string, string | number>>();
-    data.hourly.forEach((row) => {
-      const item = byTime.get(row.collect_time) ?? { collect_time: row.collect_time.slice(5).replace("T", " ") };
-      item[row.station_name] = row[selectedMetric];
-      byTime.set(row.collect_time, item);
-    });
-    return Array.from(byTime.values());
-  }, [data.hourly, selectedMetric]);
-
   return (
-    <div className="grid gap-4">
-      <div className="flex items-center justify-between gap-3 max-[720px]:flex-col max-[720px]:items-start">
+    <div className="page-stack">
+      <div className="page-toolbar">
         <Link className="inline-flex items-center gap-2 text-sm font-medium text-[color:var(--muted-foreground)] hover:text-[color:var(--primary)]" href="/">
           <ArrowLeft className="h-4 w-4" />
-          返回总览
+          总览
         </Link>
         <div className="filter-bar">
           <Select label="站点" value={selectedStation} onChange={(event) => onStationChange(event.target.value)}>
@@ -547,7 +542,7 @@ function Detail({
             })}
           </Select>
           <Select
-            label="对比指标"
+            label="指标"
             value={selectedMetric}
             onChange={(event) => onMetricChange(event.target.value as MetricKey)}
           >
@@ -557,114 +552,205 @@ function Detail({
               </option>
             ))}
           </Select>
-          <a className="link-button" href={`/api/export/weather_observations.csv?station_id=${selectedStation}`}>
-            <Download className="h-4 w-4" />
-            导出 CSV
-          </a>
         </div>
       </div>
 
-      <section className="chart-grid">
-        <ChartCard title="温湿度趋势" description="按各指标范围绘制">
-          <ResponsiveContainer width="100%" height={310}>
-            <LineChart data={hourly}>
-              <CartesianGrid stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="collect_time" tickFormatter={(value) => String(value).slice(5).replace("T", " ")} minTickGap={44} />
-              <YAxis yAxisId="temperature" stroke="var(--metric-temperature)" width={46} />
-              <YAxis yAxisId="humidity" orientation="right" stroke="var(--metric-humidity)" width={42} />
-              <Tooltip contentStyle={{ borderColor: "var(--border)", borderRadius: 8 }} />
-              <Line yAxisId="temperature" dataKey="temperature" name="温度" stroke="var(--metric-temperature)" dot={false} strokeWidth={2} />
-              <Line yAxisId="humidity" dataKey="humidity" name="湿度" stroke="var(--metric-humidity)" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
+      <ChartCard title={`${currentStation?.name ?? selectedStation} 实时趋势`}>
+        <ResponsiveContainer width="100%" height={330}>
+          <LineChart data={liveRows}>
+            <CartesianGrid stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="collect_time" tickFormatter={formatClock} minTickGap={36} />
+            <YAxis width={50} />
+            <Tooltip contentStyle={{ borderColor: "var(--border)", borderRadius: 8 }} />
+            <Line dataKey={selectedMetric} name={currentMetric.name} stroke={metricColors[selectedMetric]} dot={false} strokeWidth={2} isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </ChartCard>
 
-        <ChartCard title="风况" description="风速与风向">
-          <ResponsiveContainer width="100%" height={310}>
-            <LineChart data={hourly}>
-              <CartesianGrid stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="collect_time" tickFormatter={(value) => String(value).slice(5).replace("T", " ")} minTickGap={44} />
-              <YAxis yAxisId="speed" stroke="var(--metric-wind-speed)" width={46} />
-              <YAxis yAxisId="direction" orientation="right" stroke="var(--metric-wind-direction)" width={42} />
-              <Tooltip contentStyle={{ borderColor: "var(--border)", borderRadius: 8 }} />
-              <Line yAxisId="speed" dataKey="wind_speed" name="风速" stroke="var(--metric-wind-speed)" dot={false} strokeWidth={2} />
-              <Line yAxisId="direction" dataKey="wind_direction" name="风向" stroke="var(--metric-wind-direction)" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
+      <ChartCard title={`${currentStation?.name ?? selectedStation} 历史趋势`} description={sparkComputedDescription(data.meta.spark_completed_at)}>
+        <ResponsiveContainer width="100%" height={330}>
+          <LineChart data={historyRows}>
+            <CartesianGrid stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="collect_time" tickFormatter={(value) => String(value).slice(5).replace("T", " ")} minTickGap={44} />
+            <YAxis width={50} />
+            <Tooltip contentStyle={{ borderColor: "var(--border)", borderRadius: 8 }} />
+            <Line dataKey={selectedMetric} name={currentMetric.name} stroke={metricColors[selectedMetric]} dot={false} strokeWidth={2} />
+          </LineChart>
+        </ResponsiveContainer>
+      </ChartCard>
+    </div>
+  );
+}
 
-        <ChartCard title="多站对比" description={currentMetric.name} className="lg:col-span-2">
-          <ResponsiveContainer width="100%" height={330}>
-            <LineChart data={comparisonRows}>
-              <CartesianGrid stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="collect_time" minTickGap={44} />
-              <YAxis width={46} />
-              <Tooltip contentStyle={{ borderColor: "var(--border)", borderRadius: 8 }} />
-              {stationOrder.map((id) => {
-                const station = data.current.find((item) => item.id === id);
-                return (
-                  <Line
-                    key={id}
-                    dataKey={station?.name ?? id}
-                    name={station?.name ?? id}
-                    stroke={stationColors[id]}
-                    dot={false}
-                    strokeWidth={2}
-                    connectNulls
-                  />
-                );
-              })}
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      </section>
+function Analysis({
+  data,
+  selectedMetric,
+  recordStation,
+  hdfsRows,
+  onMetricChange,
+  onRecordStationChange,
+  onRefresh,
+}: {
+  data: DashboardData;
+  selectedMetric: MetricKey;
+  recordStation: string;
+  hdfsRows: WeatherRow[];
+  onMetricChange: (metric: MetricKey) => void;
+  onRecordStationChange: (station: string) => void;
+  onRefresh: () => void;
+}) {
+  const [refreshStatus, setRefreshStatus] = useState("");
+  const [sparkStatus, setSparkStatus] = useState<SparkJobStatus | null>(null);
+  const comparisonRows = useMemo(() => {
+    const byTime = new Map<string, Record<string, string | number>>();
+    data.records.forEach((row) => {
+      const item = byTime.get(row.collect_time) ?? { collect_time: row.collect_time.slice(5).replace("T", " ") };
+      item[row.station_name] = row[selectedMetric];
+      byTime.set(row.collect_time, item);
+    });
+    return Array.from(byTime.values());
+  }, [data.records, selectedMetric]);
+  const tableRows = hdfsRows.slice().reverse();
 
-      <section className="summary-strip">
-        {stationOrder.map((id) => {
-          const item = data.summary.find((summary) => summary.station_id === id);
-          if (!item) return null;
-          return (
-            <Card key={id} className="p-4">
-              <strong className="block text-sm">{item.station_name}</strong>
-              <span className="mt-2 block text-xs leading-6 text-[color:var(--muted-foreground)]">
-                记录 {item.records} 条，均温 {item.avg_temperature} °C，均湿 {item.avg_humidity}%
-              </span>
-              <span className="block text-xs leading-6 text-[color:var(--muted-foreground)]">
-                温度范围 {item.min_temperature} 至 {item.max_temperature} °C
-              </span>
-            </Card>
-          );
-        })}
-      </section>
+  const submitSpark = async () => {
+    setRefreshStatus("提交 Spark 重算中");
+    const nextStatus = await readJson<SparkJobStatus>("/api/analysis/refresh", { method: "POST" });
+    setSparkStatus(nextStatus);
+    setRefreshStatus(nextStatus.message);
+  };
 
-      <Card className="p-5">
-        <CardHeader>
-          <div>
-            <CardTitle>ESP32 实时采样</CardTitle>
-            <CardDescription>自动刷新于 {lastLoadedAt || "暂无"}，展示最近 5 分钟 TCP 采集记录</CardDescription>
-          </div>
-          <span className="source-pill">ESP32 + Open-Meteo</span>
-        </CardHeader>
-        <div className="live-record-grid">
-          {tangshanLive.slice(-10).reverse().map((row) => (
-            <article key={`${row.collect_time}-${row.humidity}`} className="live-record">
-              <strong>{formatClock(row.collect_time)}</strong>
-              {row.sample_seq ? <span>样本 #{row.sample_seq}</span> : null}
-              <span>{formatFixed(row.temperature)} °C</span>
-              <span>{formatFixed(row.humidity)}%</span>
-            </article>
-          ))}
-          {tangshanLive.length === 0 ? (
-            <p className="text-sm text-[color:var(--muted-foreground)]">暂无 ESP32 实时采样记录</p>
-          ) : null}
+  useEffect(() => {
+    let cancelled = false;
+    readJson<SparkJobStatus>("/api/analysis/refresh/status")
+      .then((nextStatus) => {
+        if (!cancelled && nextStatus.status === "running") {
+          setSparkStatus(nextStatus);
+          setRefreshStatus(nextStatus.message);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (sparkStatus?.status !== "running") return undefined;
+    const timer = window.setInterval(() => {
+      readJson<SparkJobStatus>("/api/analysis/refresh/status")
+        .then((nextStatus) => {
+          setSparkStatus(nextStatus);
+          setRefreshStatus(nextStatus.message);
+          if (nextStatus.status === "succeeded") {
+            void onRefresh();
+          }
+        })
+        .catch((error) => {
+          setRefreshStatus(error instanceof Error ? error.message : "Spark 状态读取失败");
+        });
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [sparkStatus?.job_id, sparkStatus?.status, onRefresh]);
+
+  return (
+    <div className="page-stack">
+      <div className="page-toolbar">
+        <Link className="inline-flex items-center gap-2 text-sm font-medium text-[color:var(--muted-foreground)] hover:text-[color:var(--primary)]" href="/detail">
+          <ArrowLeft className="h-4 w-4" />
+          详情
+        </Link>
+        <div className="filter-bar">
+          <Select label="对比指标" value={selectedMetric} onChange={(event) => onMetricChange(event.target.value as MetricKey)}>
+            {data.metrics.map((metric) => (
+              <option key={metric.id} value={metric.id}>
+                {metric.name}
+              </option>
+            ))}
+          </Select>
+          <Button variant="outline" onClick={submitSpark} disabled={sparkStatus?.status === "running"}>
+            <RefreshCw className="h-4 w-4" />
+            手动刷新
+          </Button>
         </div>
-      </Card>
+      </div>
+      {refreshStatus || sparkStatus ? (
+        <section className="spark-status" aria-live="polite">
+          <div>
+            <strong>{sparkStatus?.status === "running" ? "Spark 运行中" : "Spark 状态"}</strong>
+            <span>{refreshStatus || sparkStatus?.message}</span>
+          </div>
+          {sparkStatus?.job_id ? (
+            <div className="spark-meta">
+              job {sparkStatus.job_id}
+              {sparkStatus.application_id ? ` · ${sparkStatus.application_id}` : ""}
+              {sparkStatus.pid ? ` · pid ${sparkStatus.pid}` : ""}
+              {sparkStatus.exit_code != null ? ` · exit ${sparkStatus.exit_code}` : ""}
+            </div>
+          ) : null}
+          {sparkStatus ? (
+            <div className="spark-progress" aria-label={`Spark 进度 ${sparkStatus.progress_percent ?? 0}%`}>
+              <div className="spark-progress-header">
+                <span>{sparkStatus.progress_label ?? sparkStatus.message}</span>
+                <span>{formatNumber(sparkStatus.progress_percent ?? 0, 0)}%</span>
+              </div>
+              <div className="spark-progress-track">
+                <div style={{ width: `${Math.min(100, Math.max(0, Number(sparkStatus.progress_percent ?? 0)))}%` }} />
+              </div>
+            </div>
+          ) : null}
+          {sparkStatus?.log_tail?.length ? (
+            <pre className="spark-log">{sparkStatus.log_tail.slice(-14).join("\n")}</pre>
+          ) : null}
+        </section>
+      ) : null}
+
+      <ChartCard title="多站对比" description={sparkComputedDescription(data.meta.spark_completed_at)}>
+        <ResponsiveContainer width="100%" height={360}>
+          <LineChart data={comparisonRows}>
+            <CartesianGrid stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="collect_time" minTickGap={44} />
+            <YAxis width={50} />
+            <Tooltip contentStyle={{ borderColor: "var(--border)", borderRadius: 8 }} />
+            {stationOrder.map((id) => {
+              const station = data.current.find((item) => item.id === id);
+              return (
+                <Line
+                  key={id}
+                  dataKey={station?.name ?? id}
+                  name={station?.name ?? id}
+                  stroke={stationColors[id]}
+                  dot={false}
+                  strokeWidth={2}
+                  connectNulls
+                />
+              );
+            })}
+          </LineChart>
+        </ResponsiveContainer>
+      </ChartCard>
 
       <Card className="p-5">
         <CardHeader>
           <div>
             <CardTitle>数据记录</CardTitle>
-            <CardDescription>当前站点最近 48 条小时记录</CardDescription>
+            <CardDescription>来源：HDFS /weathertextdb/live_*.csv，实时写入记录</CardDescription>
+          </div>
+          <div className="filter-bar">
+            <Select label="站点" value={recordStation} onChange={(event) => onRecordStationChange(event.target.value)}>
+              <option value="all">全部</option>
+              {stationOrder.map((id) => {
+                const station = data.current.find((item) => item.id === id);
+                return (
+                  <option key={id} value={id}>
+                    {station?.name ?? id}
+                  </option>
+                );
+              })}
+            </Select>
+            <a className="link-button" href={`/api/export/weather_observations.csv${recordStation === "all" ? "" : `?station_id=${recordStation}`}`}>
+              <Download className="h-4 w-4" />
+              导出 CSV
+            </a>
           </div>
         </CardHeader>
         <div className="mt-3 overflow-auto">
@@ -678,27 +764,24 @@ function Detail({
                 <th>气压</th>
                 <th>风速</th>
                 <th>风向</th>
-                <th>天气代码</th>
+                <th>天气码</th>
               </tr>
             </thead>
             <tbody>
-              {hourly
-                .slice(-48)
-                .reverse()
-                .map((row) => (
-                  <tr key={`${row.station_id}-${row.collect_time}`}>
-                    <td>{row.collect_time}</td>
-                    <td>{row.station_name}</td>
-                    <td>{formatNumber(row.temperature)} °C</td>
-                    <td>{formatNumber(row.humidity, 0)}%</td>
-                    <td>{formatNumber(row.pressure)} hPa</td>
-                    <td>{formatNumber(row.wind_speed)} m/s</td>
-                    <td>
-                      {formatNumber(row.wind_direction, 0)} deg {directionLabel(row.wind_direction)}
-                    </td>
-                    <td>{row.weather_code}</td>
-                  </tr>
-                ))}
+              {tableRows.map((row) => (
+                <tr key={`${row.station_id}-${row.collect_time}`}>
+                  <td>{row.collect_time}</td>
+                  <td>{row.station_name}</td>
+                  <td>{formatNumber(row.temperature)} °C</td>
+                  <td>{formatNumber(row.humidity, 0)}%</td>
+                  <td>{formatNumber(row.pressure, 2)} hPa</td>
+                  <td>{formatNumber(row.wind_speed)} m/s</td>
+                  <td>
+                    {formatNumber(row.wind_direction, 0)}° {directionLabel(row.wind_direction)}
+                  </td>
+                  <td>{row.weather_code}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -714,7 +797,7 @@ function ChartCard({
   children,
 }: {
   title: string;
-  description: string;
+  description?: string;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -722,8 +805,11 @@ function ChartCard({
     <Card className={cn("p-5", className)}>
       <CardHeader>
         <div>
-          <CardTitle>{title}</CardTitle>
-          <CardDescription>{description}</CardDescription>
+          <CardTitle className="inline-flex items-center gap-2">
+            <BarChart3 className="h-4 w-4" />
+            {title}
+          </CardTitle>
+          {description ? <CardDescription>{description}</CardDescription> : null}
         </div>
       </CardHeader>
       <div className="mt-3">{children}</div>

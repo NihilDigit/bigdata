@@ -7,13 +7,10 @@ type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & {
 
 export function Select({ className, label, children, ...props }: SelectProps) {
   return (
-    <label className="grid gap-1.5 text-xs font-medium text-[color:var(--muted-foreground)]">
+    <label className="ui-select-label">
       <span>{label}</span>
       <select
-        className={cn(
-          "h-10 min-w-40 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-3 text-sm text-[color:var(--foreground)] outline-none transition-colors focus:border-[color:var(--primary)]",
-          className,
-        )}
+        className={cn("ui-select-input", className)}
         {...props}
       >
         {children}

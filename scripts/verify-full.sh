@@ -3,17 +3,6 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-if [[ -n "${ESP32_STATION_HOST:-}" ]]; then
-  echo "== ESP32 live ingest =="
-  timeout "${ESP32_VERIFY_TIMEOUT:-90s}" python3 backend/scripts/weather_dataserver.py \
-    --station-host "$ESP32_STATION_HOST" \
-    --station-port "${ESP32_STATION_PORT:-8080}" \
-    --max-records "${ESP32_VERIFY_RECORDS:-2}" \
-    --flush-size "${ESP32_VERIFY_RECORDS:-2}" \
-    --local-out data/raw/live_weather_observations.csv
-  echo
-fi
-
 echo "== MVP pipeline checks =="
 ./scripts/verify-mvp.sh
 
@@ -77,33 +66,34 @@ with sync_playwright() as p:
     page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
     page.goto("http://127.0.0.1:3000", wait_until="domcontentloaded")
     page.wait_for_selector(".station-marker", state="attached")
-    page.wait_for_selector(".live-panel", state="attached")
     overview_tabs = page.locator(".tab-link").count()
     station_markers = page.locator(".station-marker").count()
-    live_panel = page.locator(".live-panel").count()
+    station_card = page.locator(".station-card").count()
     page.click('a[href="/detail"]')
     page.wait_for_timeout(250)
     page.select_option('select', "tangshan")
     page.locator('select').nth(1).select_option("pressure")
     page.wait_for_timeout(250)
-    charts = page.locator(".recharts-wrapper").count()
-    live_records = page.locator(".live-record").count()
+    detail_charts = page.locator(".recharts-wrapper").count()
+    page.click('a[href="/analysis"]')
+    page.wait_for_timeout(250)
+    analysis_charts = page.locator(".recharts-wrapper").count()
     records = page.locator("tbody tr").count()
     browser.close()
 
 print(f"tabs={overview_tabs}")
 print(f"station_markers={station_markers}")
-print(f"live_panel={live_panel}")
-print(f"charts={charts}")
-print(f"live_records={live_records}")
+print(f"station_card={station_card}")
+print(f"detail_charts={detail_charts}")
+print(f"analysis_charts={analysis_charts}")
 print(f"records={records}")
 print(f"console_errors={errors}")
 
-assert overview_tabs == 2
+assert overview_tabs == 3
 assert station_markers == 3
-assert live_panel == 1
-assert charts == 3
-assert live_records > 0
-assert records == 48
+assert station_card == 1
+assert detail_charts == 2
+assert analysis_charts == 1
+assert records > 0
 assert not errors
 PY

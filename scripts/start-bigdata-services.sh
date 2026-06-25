@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+"$(dirname "${BASH_SOURCE[0]}")/prepare-runtime-conf.sh"
+
 "$(dirname "${BASH_SOURCE[0]}")/distro-bigdata.sh" '
 echo "Starting HDFS"
 hdfs --daemon start namenode || true
@@ -8,8 +10,12 @@ hdfs --daemon start datanode || true
 hdfs --daemon start secondarynamenode || true
 
 echo "Starting YARN"
-yarn --daemon start resourcemanager || true
-yarn --daemon start nodemanager || true
+if ! jps | grep -q ResourceManager; then
+  nohup yarn resourcemanager >/tmp/weather-yarn-rm.log 2>&1 &
+fi
+if ! jps | grep -q NodeManager; then
+  nohup yarn nodemanager >/tmp/weather-yarn-nm.log 2>&1 &
+fi
 
 echo "Waiting for HDFS"
 for i in $(seq 1 20); do
