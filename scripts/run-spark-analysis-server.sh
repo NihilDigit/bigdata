@@ -5,7 +5,6 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SPARK_SERVER_HOST="${SPARK_SERVER_HOST:-127.0.0.1}"
 SPARK_SERVER_PORT="${SPARK_SERVER_PORT:-18081}"
 HDFS_OUTPUT="${HDFS_OUTPUT:-/weather_analysis}"
-COMPAT_OUTPUT="${COMPAT_OUTPUT:-/weather_10secmean}"
 LOCAL_OUTPUT="${LOCAL_OUTPUT:-$PROJECT_ROOT/data/processed}"
 WINDOW_SECONDS="${WINDOW_SECONDS:-10}"
 SOURCE="${SOURCE:-csv}"
@@ -23,6 +22,5 @@ exec spark-submit --master yarn \
   --hdfs-output '$HDFS_OUTPUT' \
   --local-output '$LOCAL_OUTPUT' \
   $SOURCE_ARGS \
-  --window-seconds '$WINDOW_SECONDS' \
-  --compat-output '$COMPAT_OUTPUT'
+  --window-seconds '$WINDOW_SECONDS'
 "

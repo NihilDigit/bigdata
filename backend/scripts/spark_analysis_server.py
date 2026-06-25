@@ -197,8 +197,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source", choices=["csv", "hive"], default="csv")
     parser.add_argument("--hive-table", default="weather_table")
     parser.add_argument("--window-seconds", type=int, default=10)
-    parser.add_argument("--compat-output", default="/weather_10secmean")
-    parser.add_argument("--no-compat-output", action="store_true")
     args = parser.parse_args()
     args.input_path = args.input_path
     args.hdfs_output = args.hdfs_output
@@ -214,8 +212,6 @@ def make_analysis_args(args: argparse.Namespace) -> argparse.Namespace:
         source=args.source,
         hive_table=args.hive_table,
         window_seconds=args.window_seconds,
-        compat_output=args.compat_output,
-        no_compat_output=args.no_compat_output,
     )
 
 

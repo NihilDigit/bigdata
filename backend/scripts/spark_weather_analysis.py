@@ -49,8 +49,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source", choices=["csv", "hive"], default="csv")
     parser.add_argument("--hive-table", default="weather_table")
     parser.add_argument("--window-seconds", type=int, default=10)
-    parser.add_argument("--compat-output", default="/weather_10secmean")
-    parser.add_argument("--no-compat-output", action="store_true")
     return parser.parse_args()
 
 
@@ -247,16 +245,6 @@ def run_analysis(
         window_mean.coalesce(3).write.mode("overwrite").option("header", "true").csv(
             f"{args.hdfs_output}/window_mean"
         )
-        if not args.no_compat_output:
-            window_mean.select(
-                "collect_time",
-                "station_name",
-                "temperature",
-                "humidity",
-                "pressure",
-                "wind_speed",
-                "wind_direction",
-            ).coalesce(3).write.mode("overwrite").option("header", "true").csv(args.compat_output)
 
         mark("写入本地 JSON 缓存", 85)
         station_summary_rows = [row_to_dict(row) for row in station_summary.collect()]
@@ -272,8 +260,6 @@ def run_analysis(
         print(f"source={args.source}")
         print(f"input={args.hive_table if args.source == 'hive' else args.input_path}")
         print(f"hdfs_output={args.hdfs_output}")
-        if not args.no_compat_output:
-            print(f"compat_output={args.compat_output}")
         print(f"local_output={local_output.resolve()}")
         print(f"window_seconds={args.window_seconds}")
         print(f"historical_records={record_count}")
@@ -291,7 +277,6 @@ def run_analysis(
             "hourly_series_rows": len(hourly_series_rows),
             "window_mean_rows": len(window_mean_rows),
             "hdfs_output": args.hdfs_output,
-            "compat_output": None if args.no_compat_output else args.compat_output,
             "local_output": str(local_output.resolve()),
         }
     finally:

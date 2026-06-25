@@ -52,7 +52,6 @@ Spark 输出路径：
 /weather_analysis/daily_summary    # 历史日摘要
 /weather_analysis/hourly_series    # 历史小时序列
 /weather_analysis/window_mean      # 10 秒窗口均值
-/weather_10secmean                 # 课程指导文档兼容路径
 ```
 
 ## Web 演示
@@ -144,30 +143,6 @@ Spark 分析会把历史统计和实时窗口分开计算：
 
 - `station_summary.json`、`daily_summary.json`、`hourly_series.json` 只统计历史小时记录，因此三站记录数各为 336。
 - `window_mean_series.json` 对有效输入做 10 秒窗口均值，用于保留课程要求的窗口计算结果。
-
-## MVP 验收
-
-在服务启动后运行：
-
-```bash
-./scripts/verify-mvp.sh
-```
-
-该脚本会检查本地真实数据文件、FastAPI 接口、HDFS 输入目录、Spark 输出目录和 HBase 当前表。
-
-完整版验收：
-
-```bash
-./scripts/verify-full.sh
-```
-
-连接 ESP32 实机时可让验收脚本先刷新实时 HDFS/HBase 数据：
-
-```bash
-ESP32_STATION_HOST=<ESP32_IP> ./scripts/verify-full.sh
-```
-
-该脚本会额外检查设计覆盖入口、扩展 API、CSV 导出和 Next.js 三页渲染。
 
 ## 报告
 
