@@ -779,8 +779,8 @@ function Analysis({
               </tr>
             </thead>
             <tbody>
-              {tableRows.map((row) => (
-                <tr key={`${row.station_id}-${row.collect_time}`}>
+              {tableRows.map((row, index) => (
+                <tr key={`${row.station_id}-${row.collect_time}-${row.sample_seq ?? "no-seq"}-${index}`}>
                   <td>{row.collect_time}</td>
                   <td>{row.station_name}</td>
                   <td>{formatNumber(row.temperature)} °C</td>

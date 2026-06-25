@@ -215,7 +215,7 @@
     "collect_date": "2026-06-18",
     "records": 24,
     "avg_temperature": 26.2,
-    "avg_humidity": 75.62,
+    "avg_humidity": 75.63,
     "max_temperature": 30.9,
     "min_temperature": 22.2
   },
@@ -225,7 +225,7 @@
     "collect_date": "2026-06-18",
     "records": 24,
     "avg_temperature": 25.48,
-    "avg_humidity": 84.12,
+    "avg_humidity": 84.13,
     "max_temperature": 29.7,
     "min_temperature": 22.8
   },
@@ -274,7 +274,7 @@
     "station_name": "北京",
     "collect_date": "2026-06-20",
     "records": 24,
-    "avg_temperature": 23.82,
+    "avg_temperature": 23.83,
     "avg_humidity": 57.0,
     "max_temperature": 27.9,
     "min_temperature": 21.3
