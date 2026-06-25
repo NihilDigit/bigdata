@@ -338,14 +338,18 @@ def flush_hbase(records: list[WeatherRecord], args: argparse.Namespace) -> None:
         connection.close()
 
 
-def flush_records(args: argparse.Namespace, records: list[WeatherRecord]) -> None:
+def flush_archive_records(args: argparse.Namespace, records: list[WeatherRecord]) -> None:
     if not records:
         return
     append_local(Path(args.local_out), records)
     if not args.no_hdfs:
         flush_hdfs(records, args.hdfs_dir, args.dry_run)
-    if not args.no_hbase:
-        flush_hbase(records, args)
+
+
+def flush_realtime_records(args: argparse.Namespace, records: list[WeatherRecord]) -> None:
+    if not records or args.no_hbase:
+        return
+    flush_hbase(records, args)
 
 
 def log_record(record: WeatherRecord) -> None:
@@ -362,25 +366,49 @@ class WsIngestState:
         self.current = fetch_current_by_station()
         self.refresh_at = datetime.now() + timedelta(minutes=args.openmeteo_refresh_minutes)
         self.batch: list[WeatherRecord] = []
-        self.flush_queue: asyncio.Queue[list[WeatherRecord]] = asyncio.Queue()
-        self.flush_worker_task = asyncio.create_task(self.flush_worker())
+        self.archive_queue: asyncio.Queue[list[WeatherRecord]] = asyncio.Queue()
+        self.realtime_queue: asyncio.Queue[list[WeatherRecord]] = asyncio.Queue()
+        self.archive_worker_task = asyncio.create_task(self.archive_worker())
+        self.realtime_worker_task = asyncio.create_task(self.realtime_worker())
         self.total = 0
         self.lock = asyncio.Lock()
         self.stop = asyncio.Event()
 
-    def schedule_flush(self, records: list[WeatherRecord]) -> None:
-        self.flush_queue.put_nowait(records)
+    def schedule_archive_flush(self, records: list[WeatherRecord]) -> None:
+        self.archive_queue.put_nowait(records)
 
-    async def flush_worker(self) -> None:
+    def schedule_realtime_flush(self, records: list[WeatherRecord]) -> None:
+        self.realtime_queue.put_nowait(records)
+
+    async def archive_worker(self) -> None:
         while True:
-            records = await self.flush_queue.get()
+            records = await self.archive_queue.get()
             try:
-                await asyncio.to_thread(flush_records, self.args, records)
-                print(f"flushed records={len(records)} total={self.total} queue={self.flush_queue.qsize()}")
+                await asyncio.to_thread(flush_archive_records, self.args, records)
+                print(f"flushed archive records={len(records)} total={self.total} queue={self.archive_queue.qsize()}")
             except Exception as exc:
-                print(f"flush failed records={len(records)}: {exc}")
+                print(f"archive flush failed records={len(records)}: {exc}")
             finally:
-                self.flush_queue.task_done()
+                self.archive_queue.task_done()
+
+    async def realtime_worker(self) -> None:
+        while True:
+            records = await self.realtime_queue.get()
+            task_count = 1
+            while True:
+                try:
+                    records.extend(self.realtime_queue.get_nowait())
+                    task_count += 1
+                except asyncio.QueueEmpty:
+                    break
+            try:
+                await asyncio.to_thread(flush_realtime_records, self.args, records)
+                print(f"flushed realtime records={len(records)} total={self.total} queue={self.realtime_queue.qsize()}")
+            except Exception as exc:
+                print(f"realtime flush failed records={len(records)}: {exc}")
+            finally:
+                for _ in range(task_count):
+                    self.realtime_queue.task_done()
 
     async def add_message(self, message: str | bytes) -> None:
         if datetime.now() >= self.refresh_at:
@@ -396,14 +424,16 @@ class WsIngestState:
             self.batch.append(record)
             self.total += 1
             log_record(record)
+            self.schedule_realtime_flush([record])
             if len(self.batch) >= self.args.flush_size:
-                self.schedule_flush(list(self.batch))
+                self.schedule_archive_flush(list(self.batch))
                 self.batch.clear()
             if self.args.max_records and self.total >= self.args.max_records:
                 if self.batch:
-                    self.schedule_flush(list(self.batch))
+                    self.schedule_archive_flush(list(self.batch))
                     self.batch.clear()
-                await self.flush_queue.join()
+                await self.realtime_queue.join()
+                await self.archive_queue.join()
                 self.stop.set()
 
 
@@ -428,7 +458,8 @@ async def receive_ws_records(args: argparse.Namespace) -> int:
     print(f"weather websocket server listening ws://{args.ws_host}:{args.ws_port}")
     async with websockets.serve(handler, args.ws_host, args.ws_port, ping_interval=None):
         await state.stop.wait()
-    state.flush_worker_task.cancel()
+    state.archive_worker_task.cancel()
+    state.realtime_worker_task.cancel()
     return 0
 
 

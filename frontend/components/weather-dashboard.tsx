@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   BarChart3,
@@ -309,7 +309,7 @@ export function WeatherDashboard({ view }: { view: ViewName }) {
   const [recordStation, setRecordStation] = useState("all");
   const [status, setStatus] = useState("");
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const [nextData, nextLive] = await Promise.all([fetchDashboard(), fetchLiveRows(selectedStation)]);
       setData(nextData);
@@ -318,18 +318,18 @@ export function WeatherDashboard({ view }: { view: ViewName }) {
     } catch (error) {
       setStatus(error instanceof Error ? `数据读取失败：${error.message}` : "数据读取失败");
     }
-  };
+  }, [selectedStation]);
 
   useEffect(() => {
     void load();
-  }, [selectedStation]);
+  }, [load]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       void load();
     }, refreshIntervalMs);
     return () => window.clearInterval(timer);
-  }, [selectedStation]);
+  }, [load]);
 
   useEffect(() => {
     if (view !== "analysis") return undefined;
@@ -601,6 +601,7 @@ function Analysis({
 }) {
   const [refreshStatus, setRefreshStatus] = useState("");
   const [sparkStatus, setSparkStatus] = useState<SparkJobStatus | null>(null);
+  const sparkLogRef = useRef<HTMLPreElement | null>(null);
   const comparisonRows = useMemo(() => {
     const byTime = new Map<string, Record<string, string | number>>();
     data.records.forEach((row) => {
@@ -623,7 +624,7 @@ function Analysis({
     let cancelled = false;
     readJson<SparkJobStatus>("/api/analysis/refresh/status")
       .then((nextStatus) => {
-        if (!cancelled && nextStatus.status === "running") {
+        if (!cancelled && (nextStatus.status === "running" || Boolean(nextStatus.job_id))) {
           setSparkStatus(nextStatus);
           setRefreshStatus(nextStatus.message);
         }
@@ -651,6 +652,13 @@ function Analysis({
     }, 1500);
     return () => window.clearInterval(timer);
   }, [sparkStatus?.job_id, sparkStatus?.status, onRefresh]);
+
+  useEffect(() => {
+    const logEl = sparkLogRef.current;
+    if (logEl) {
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  }, [sparkStatus?.log_tail]);
 
   return (
     <div className="page-stack">
@@ -699,7 +707,7 @@ function Analysis({
             </div>
           ) : null}
           {sparkStatus?.log_tail?.length ? (
-            <pre className="spark-log">{sparkStatus.log_tail.join("\n")}</pre>
+            <pre ref={sparkLogRef} className="spark-log">{sparkStatus.log_tail.join("\n")}</pre>
           ) : null}
         </section>
       ) : null}

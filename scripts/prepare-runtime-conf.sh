@@ -12,6 +12,16 @@ cp "$HADOOP_HOME/etc/hadoop/mapred-site.xml" "$HADOOP_CONF_DIR/"
 cp "$HADOOP_HOME/etc/hadoop/capacity-scheduler.xml" "$HADOOP_CONF_DIR/"
 cp "$HADOOP_HOME/etc/hadoop/workers" "$HADOOP_CONF_DIR/" 2>/dev/null || true
 cp "$HADOOP_HOME/etc/hadoop/hadoop-env.sh" "$HADOOP_CONF_DIR/"
+cp "$HADOOP_HOME/etc/hadoop/log4j.properties" "$HADOOP_CONF_DIR/" 2>/dev/null || true
+if [[ ! -f "$HADOOP_CONF_DIR/log4j.properties" ]]; then
+  cat >"$HADOOP_CONF_DIR/log4j.properties" <<'EOF'
+log4j.rootLogger=INFO, console
+log4j.appender.console=org.apache.log4j.ConsoleAppender
+log4j.appender.console.target=System.err
+log4j.appender.console.layout=org.apache.log4j.PatternLayout
+log4j.appender.console.layout.ConversionPattern=%d{ISO8601} %-5p %c: %m%n
+EOF
+fi
 
 cp "$HBASE_HOME/conf/hbase-site.xml" "$HBASE_CONF_DIR/"
 cp "$HBASE_HOME/conf/hbase-env.sh" "$HBASE_CONF_DIR/"

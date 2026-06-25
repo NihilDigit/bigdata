@@ -19,10 +19,13 @@ bigdata
 # Firmware binary is kept local and can be restored from the original data archive.
 data/firmware/
 data/raw/*.body.csv
+data/raw/live_weather_observations.csv
 
 # Next.js frontend dependencies and build output
 frontend/node_modules/
 frontend/.next/
+frontend/.next.bak-*/
+frontend/tsconfig.tsbuildinfo
 
 # Report command logs and local screenshots can contain host paths, device IDs,
 # usernames, network names, or other machine-specific details.

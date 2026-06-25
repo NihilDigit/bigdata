@@ -78,6 +78,15 @@ def tail_lines(path: Path, limit: int = 80) -> list[str]:
     return path.read_text(encoding="utf-8", errors="replace").splitlines()[-limit:]
 
 
+def tail_lines_from(path: Path, start_line: int | None, limit: int = 80) -> list[str]:
+    if not path.exists():
+        return []
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    if start_line is not None and start_line >= 0:
+        lines = lines[start_line:]
+    return lines[-limit:]
+
+
 def read_spark_status() -> dict[str, Any]:
     if not SPARK_STATUS_PATH.exists():
         return {
@@ -88,7 +97,8 @@ def read_spark_status() -> dict[str, Any]:
         }
     status = json.loads(SPARK_STATUS_PATH.read_text(encoding="utf-8"))
     log_path = Path(status.get("log_path", SPARK_LOG_PATH))
-    status["log_tail"] = tail_lines(log_path, 240)
+    start_line = status.get("log_start_line")
+    status["log_tail"] = tail_lines_from(log_path, start_line if isinstance(start_line, int) else None, 240)
     return status
 
 

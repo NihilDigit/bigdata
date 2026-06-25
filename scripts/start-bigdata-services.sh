@@ -4,18 +4,49 @@ set -euo pipefail
 "$(dirname "${BASH_SOURCE[0]}")/prepare-runtime-conf.sh"
 
 "$(dirname "${BASH_SOURCE[0]}")/distro-bigdata.sh" '
+daemon_running() {
+  jps | awk "{print \$2}" | grep -qx "$1"
+}
+
+start_hdfs_daemon() {
+  local process="$1"
+  local daemon="$2"
+  if daemon_running "$process"; then
+    echo "$process already running"
+    return
+  fi
+  hdfs --daemon start "$daemon"
+}
+
+start_yarn_daemon() {
+  local process="$1"
+  local daemon="$2"
+  if daemon_running "$process"; then
+    echo "$process already running"
+    return
+  fi
+  nohup yarn "$daemon" >/tmp/weather-yarn-"$daemon".log 2>&1 &
+}
+
+start_hbase_daemon() {
+  local process="$1"
+  local daemon="$2"
+  shift 2
+  if daemon_running "$process"; then
+    echo "$process already running"
+    return
+  fi
+  hbase-daemon.sh start "$daemon" "$@"
+}
+
 echo "Starting HDFS"
-hdfs --daemon start namenode || true
-hdfs --daemon start datanode || true
-hdfs --daemon start secondarynamenode || true
+start_hdfs_daemon NameNode namenode
+start_hdfs_daemon DataNode datanode
+start_hdfs_daemon SecondaryNameNode secondarynamenode
 
 echo "Starting YARN"
-if ! jps | grep -q ResourceManager; then
-  nohup yarn resourcemanager >/tmp/weather-yarn-rm.log 2>&1 &
-fi
-if ! jps | grep -q NodeManager; then
-  nohup yarn nodemanager >/tmp/weather-yarn-nm.log 2>&1 &
-fi
+start_yarn_daemon ResourceManager resourcemanager
+start_yarn_daemon NodeManager nodemanager
 
 echo "Waiting for HDFS"
 for i in $(seq 1 20); do
@@ -35,10 +66,10 @@ if ! hdfs dfs -test -e /spark/jars/spark-core_2.12-3.5.1.jar; then
 fi
 
 echo "Starting HBase"
-hbase-daemon.sh start zookeeper || true
-hbase-daemon.sh start master || true
-hbase-daemon.sh start regionserver || true
-hbase-daemon.sh start thrift -p 9090 || true
+start_hbase_daemon HQuorumPeer zookeeper
+start_hbase_daemon HMaster master
+start_hbase_daemon HRegionServer regionserver
+start_hbase_daemon ThriftServer thrift -p 9090
 
 echo "Current Java processes"
 jps

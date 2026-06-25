@@ -23,6 +23,8 @@ ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_DIR = ROOT / ".runtime"
 STATUS_PATH = RUNTIME_DIR / "spark-analysis-status.json"
 LOG_PATH = RUNTIME_DIR / "spark-analysis.log"
+EVENT_LOG_PATH = RUNTIME_DIR / "spark-analysis-events.log"
+RAW_LOG_PATH = Path(os.environ.get("SPARK_RAW_LOG_PATH", str(LOG_PATH)))
 
 
 def now_iso() -> str:
@@ -42,13 +44,24 @@ class Tee(io.TextIOBase):
 
     def write(self, value: str) -> int:
         for stream in self.streams:
+            if stream.closed:
+                continue
             stream.write(value)
             stream.flush()
         return len(value)
 
     def flush(self) -> None:
         for stream in self.streams:
+            if stream.closed:
+                continue
             stream.flush()
+
+
+def count_lines(path: Path) -> int:
+    if not path.exists():
+        return 0
+    with path.open("r", encoding="utf-8", errors="replace") as f:
+        return sum(1 for _ in f)
 
 
 class SparkAnalysisRuntime:
@@ -65,31 +78,37 @@ class SparkAnalysisRuntime:
             "exit_code": None,
             "pid": os.getpid(),
             "command": "spark-analysis-server",
-            "log_path": str(LOG_PATH),
+            "log_path": str(RAW_LOG_PATH),
+            "event_log_path": str(EVENT_LOG_PATH),
+            "log_start_line": None,
             "progress_percent": 0,
             "progress_label": "初始化 SparkSession",
         }
         write_json_atomic(STATUS_PATH, self.status)
-        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        self.append_log(f"[{now_iso()}] starting persistent Spark driver pid={os.getpid()}")
+        RAW_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        EVENT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self.append_event(f"[{now_iso()}] starting persistent Spark driver pid={os.getpid()}")
         self.spark = build_spark_session(args)
+        application_id = self.spark.sparkContext.applicationId
         self.set_status(
             status="idle",
             message="常驻 Spark driver 已就绪",
+            application_id=application_id,
             progress_percent=0,
             progress_label="等待刷新请求",
         )
-        self.append_log(f"[{now_iso()}] persistent Spark driver ready")
+        self.append_event(f"[{now_iso()}] persistent Spark driver ready application_id={application_id}")
 
-    def append_log(self, line: str) -> None:
-        with LOG_PATH.open("a", encoding="utf-8") as log:
+    def append_event(self, line: str) -> None:
+        with EVENT_LOG_PATH.open("a", encoding="utf-8") as log:
             log.write(line.rstrip() + "\n")
 
     def set_status(self, **updates: Any) -> dict[str, Any]:
         with self.lock:
             self.status.update(updates)
             self.status["pid"] = os.getpid()
-            self.status["log_path"] = str(LOG_PATH)
+            self.status["log_path"] = str(RAW_LOG_PATH)
+            self.status["event_log_path"] = str(EVENT_LOG_PATH)
             write_json_atomic(STATUS_PATH, self.status)
             return dict(self.status)
 
@@ -98,7 +117,6 @@ class SparkAnalysisRuntime:
             return dict(self.status)
 
     def progress(self, label: str, percent: int) -> None:
-        self.append_log(f"[{now_iso()}] progress={percent}% {label}")
         self.set_status(
             status="running",
             message=label,
@@ -121,6 +139,10 @@ class SparkAnalysisRuntime:
                     "exit_code": None,
                     "progress_percent": 1,
                     "progress_label": "刷新请求入队",
+                    "log_path": str(RAW_LOG_PATH),
+                    "event_log_path": str(EVENT_LOG_PATH),
+                    "log_start_line": count_lines(RAW_LOG_PATH),
+                    "application_id": self.spark.sparkContext.applicationId,
                     "result": None,
                     "elapsed_seconds": None,
                 }
@@ -132,14 +154,14 @@ class SparkAnalysisRuntime:
 
     def run_job(self, job_id: str) -> None:
         started = time.monotonic()
-        self.append_log(f"[{now_iso()}] job_id={job_id} start persistent Spark refresh")
+        self.append_event(f"[{now_iso()}] job_id={job_id} start persistent Spark refresh")
         try:
-            with LOG_PATH.open("a", encoding="utf-8") as log:
+            with RAW_LOG_PATH.open("a", encoding="utf-8") as log:
                 tee = Tee(log)
                 with contextlib.redirect_stdout(tee), contextlib.redirect_stderr(tee):
                     result = run_analysis(self.spark, self.args, self.progress)
             elapsed = round(time.monotonic() - started, 2)
-            self.append_log(f"[{now_iso()}] job_id={job_id} succeeded elapsed={elapsed}s")
+            self.append_event(f"[{now_iso()}] job_id={job_id} succeeded elapsed={elapsed}s")
             self.set_status(
                 status="succeeded",
                 message=f"Spark 重算完成，耗时 {elapsed}s",
@@ -152,8 +174,8 @@ class SparkAnalysisRuntime:
             )
         except Exception as exc:
             elapsed = round(time.monotonic() - started, 2)
-            self.append_log(f"[{now_iso()}] job_id={job_id} failed elapsed={elapsed}s error={exc}")
-            self.append_log(traceback.format_exc())
+            self.append_event(f"[{now_iso()}] job_id={job_id} failed elapsed={elapsed}s error={exc}")
+            self.append_event(traceback.format_exc())
             self.set_status(
                 status="failed",
                 message=f"Spark 重算失败：{exc}",
@@ -201,7 +223,7 @@ class Handler(BaseHTTPRequestHandler):
     runtime: SparkAnalysisRuntime
 
     def log_message(self, fmt: str, *args: Any) -> None:
-        self.runtime.append_log(f"[{now_iso()}] http {self.address_string()} {fmt % args}")
+        self.runtime.append_event(f"[{now_iso()}] http {self.address_string()} {fmt % args}")
 
     def send_json(self, data: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
@@ -232,7 +254,7 @@ def main() -> int:
     runtime = SparkAnalysisRuntime(make_analysis_args(args))
     Handler.runtime = runtime
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    runtime.append_log(f"[{now_iso()}] listening on http://{args.host}:{args.port}")
+    runtime.append_event(f"[{now_iso()}] listening on http://{args.host}:{args.port}")
     try:
         server.serve_forever()
     finally:
