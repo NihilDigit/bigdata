@@ -69,7 +69,12 @@ def parse_collect_ts(weather: Any) -> Any:
 def read_weather(spark: SparkSession, args: argparse.Namespace) -> Any:
     if args.source == "hive":
         return spark.table(args.hive_table)
-    return spark.read.schema(SCHEMA).option("header", "false").csv(args.input_path)
+    return (
+        spark.read.schema(SCHEMA)
+        .option("header", "false")
+        .csv(args.input_path)
+        .withColumn("_source_file", F.input_file_name())
+    )
 
 
 def build_spark_session(args: argparse.Namespace) -> SparkSession:
@@ -106,12 +111,21 @@ def run_analysis(
         .persist(StorageLevel.MEMORY_AND_DISK)
     )
     try:
-        record_count = weather.count()
-        mark(f"读取完成 records={record_count}", 25)
+        weather_valid = weather.where(F.col("collect_ts").isNotNull())
+        if "_source_file" in weather.columns:
+            source_file = F.lower(F.coalesce(F.col("_source_file"), F.lit("")))
+            history_weather = weather_valid.where(~source_file.rlike("(^|/)live_[^/]*\\.csv$"))
+        else:
+            history_weather = weather_valid.where(F.date_format("collect_ts", "mm:ss") == "00:00")
+        history_weather = history_weather.persist(StorageLevel.MEMORY_AND_DISK)
+
+        record_count = history_weather.count()
+        all_record_count = weather_valid.count()
+        mark(f"读取完成 historical_records={record_count}", 25)
 
         mark("计算站点统计摘要", 35)
         station_summary_raw = (
-            weather.groupBy("station_id", "station_name")
+            history_weather.groupBy("station_id", "station_name")
             .agg(
                 F.count("*").alias("records"),
                 F.round(F.avg("temperature"), 2).alias("avg_temperature"),
@@ -144,7 +158,7 @@ def run_analysis(
 
         mark("计算日统计与窗口均值", 55)
         daily_summary = (
-            weather.groupBy("station_id", "station_name", "collect_date")
+            history_weather.groupBy("station_id", "station_name", "collect_date")
             .agg(
                 F.count("*").alias("records"),
                 F.round(F.avg("temperature"), 2).alias("avg_temperature"),
@@ -156,9 +170,41 @@ def run_analysis(
             .persist(StorageLevel.MEMORY_AND_DISK)
         )
 
+        hourly_series = (
+            history_weather.groupBy(
+                "station_id",
+                "station_name",
+                F.window("collect_ts", "1 hour").alias("time_window"),
+            )
+            .agg(
+                F.count("*").alias("records"),
+                F.round(F.avg("temperature"), 2).alias("temperature"),
+                F.round(F.avg("humidity"), 2).alias("humidity"),
+                F.round(F.avg("pressure"), 2).alias("pressure"),
+                F.round(F.avg("wind_speed"), 2).alias("wind_speed"),
+                F.round(F.avg("wind_direction"), 2).alias("wind_direction"),
+                F.round(F.avg("weather_code")).cast("int").alias("weather_code"),
+            )
+            .select(
+                F.date_format(F.col("time_window.start"), "yyyy-MM-dd'T'HH:mm:ss").alias(
+                    "collect_time"
+                ),
+                "station_id",
+                "station_name",
+                "records",
+                "temperature",
+                "humidity",
+                "pressure",
+                "wind_speed",
+                "wind_direction",
+                "weather_code",
+            )
+            .orderBy("collect_time", "station_id")
+            .persist(StorageLevel.MEMORY_AND_DISK)
+        )
+
         window_mean = (
-            weather.where(F.col("collect_ts").isNotNull())
-            .groupBy(
+            weather_valid.groupBy(
                 "station_id",
                 "station_name",
                 F.window("collect_ts", f"{args.window_seconds} seconds").alias("time_window"),
@@ -195,6 +241,9 @@ def run_analysis(
         daily_summary.coalesce(1).write.mode("overwrite").option("header", "true").csv(
             f"{args.hdfs_output}/daily_summary"
         )
+        hourly_series.coalesce(3).write.mode("overwrite").option("header", "true").csv(
+            f"{args.hdfs_output}/hourly_series"
+        )
         window_mean.coalesce(3).write.mode("overwrite").option("header", "true").csv(
             f"{args.hdfs_output}/window_mean"
         )
@@ -212,10 +261,12 @@ def run_analysis(
         mark("写入本地 JSON 缓存", 85)
         station_summary_rows = [row_to_dict(row) for row in station_summary.collect()]
         daily_summary_rows = [row_to_dict(row) for row in daily_summary.collect()]
+        hourly_series_rows = [row_to_dict(row) for row in hourly_series.collect()]
         window_mean_rows = [row_to_dict(row) for row in window_mean.collect()]
         write_json(local_output / "station_summary.json", station_summary_rows)
         write_json(local_output / "daily_summary.json", daily_summary_rows)
-        write_json(local_output / "hourly_series.json", window_mean_rows)
+        write_json(local_output / "hourly_series.json", hourly_series_rows)
+        write_json(local_output / "window_mean_series.json", window_mean_rows)
 
         mark("输出 Spark 汇总", 95)
         print(f"source={args.source}")
@@ -225,22 +276,33 @@ def run_analysis(
             print(f"compat_output={args.compat_output}")
         print(f"local_output={local_output.resolve()}")
         print(f"window_seconds={args.window_seconds}")
-        print(f"records={record_count}")
+        print(f"historical_records={record_count}")
+        print(f"all_valid_records={all_record_count}")
         print(f"station_summary_rows={len(station_summary_rows)}")
         print(f"daily_summary_rows={len(daily_summary_rows)}")
+        print(f"hourly_series_rows={len(hourly_series_rows)}")
         print(f"window_mean_rows={len(window_mean_rows)}")
         mark("Spark 重算完成", 100)
         return {
             "records": record_count,
+            "all_valid_records": all_record_count,
             "station_summary_rows": len(station_summary_rows),
             "daily_summary_rows": len(daily_summary_rows),
+            "hourly_series_rows": len(hourly_series_rows),
             "window_mean_rows": len(window_mean_rows),
             "hdfs_output": args.hdfs_output,
             "compat_output": None if args.no_compat_output else args.compat_output,
             "local_output": str(local_output.resolve()),
         }
     finally:
-        for frame_name in ("window_mean", "daily_summary", "station_summary", "weather"):
+        for frame_name in (
+            "window_mean",
+            "hourly_series",
+            "daily_summary",
+            "station_summary",
+            "history_weather",
+            "weather",
+        ):
             frame = locals().get(frame_name)
             if frame is not None:
                 frame.unpersist()

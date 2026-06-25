@@ -1,24 +1,59 @@
 # 气象大数据采集、分析与可视化系统
 
-本项目实现唐山、北京、上海三个站点的气象数据采集、存储、计算和可视化展示。实现范围按 `设计文档.md` 组织：ESP32-C3 + DHT11 无线采集，三站 WebSocket 采集服务，HBase/HDFS/Hive/Spark 数据链路，以及 FastAPI + Next.js 可视化。
+本项目实现唐山、北京、上海三个站点的气象数据采集、存储、计算和可视化展示。系统由 ESP32-C3 + DHT11 实机采集、三站 WebSocket 采集服务、HBase/HDFS/Hive/Spark 数据链路，以及 FastAPI + Next.js 可视化组成。
+
+当前展示口径分为两条：
+
+- 历史分析：Open-Meteo Archive API 的三站小时数据，时间范围为 `2026-06-11T00:00` 至 `2026-06-24T23:00`，共 14 天、1008 条小时记录。
+- 实时链路：唐山 ESP32 实机数据与北京、上海 Open-Meteo 实时模拟站，每秒写入采集服务，再进入 HBase 和 HDFS `live_*.csv`。
 
 ## 数据来源
 
 - 唐山当前温湿度：ESP32-C3 + DHT11，当前实物数据口为 GPIO4；正式演示走 Wi-Fi/WebSocket，USB 串口仅用于刷写、上传和调试日志。
 - 北京、上海当前数据：Open-Meteo 当前真实值 + 小幅扰动，以 WebSocket Client 每秒推送。
 - 唐山、北京、上海历史数据：Open-Meteo Archive API。
-- 历史范围：`2026-06-11T00:00` 至 `2026-06-24T23:00`，共 14 天、1008 条小时记录。
+
+历史原始数据位于：
+
+```text
+data/raw/weather_observations.csv
+```
+
+当前站点缓存位于：
+
+```text
+data/raw/current_weather_combined.json
+```
+
+Spark 本地缓存位于：
+
+```text
+data/processed/station_summary.json
+data/processed/daily_summary.json
+data/processed/hourly_series.json
+data/processed/window_mean_series.json
+```
 
 ## 大数据组件
 
 大数据环境运行在 `ubuntu22` distrobox 中。默认假定参考大数据环境位于当前仓库上两级目录下的 `bigdata/`，也可以通过 `BIGDATA_ROOT` 和 `BIGDATA_ROOT_IN_CONTAINER` 覆盖：
 
-- Hadoop/HDFS：历史 CSV 上传到 `/weathertextdb`
+- Hadoop/HDFS：历史 CSV 和实时 `live_*.csv` 写入 `/weathertextdb`
 - Hive：外部表 `weather_table`
-- Spark：从 Hive 表读取数据，在 YARN 上计算 10 秒窗口均值，输出到 `/weather_analysis`，并兼容生成 `/weather_10secmean`
-- HBase：当前三站数据写入 `realtime_weather`
+- Spark：在 YARN 上计算历史小时统计、日统计、小时序列和实时 10 秒窗口均值
+- HBase：当前三站数据写入 `realtime_weather`，用于页面当前读数和最近实时趋势
 - Web API：FastAPI，默认运行在 `http://127.0.0.1:8008`
 - 前端：Next.js + shadcn/ui 风格组件 + Recharts，默认运行在 `http://127.0.0.1:3000`
+
+Spark 输出路径：
+
+```text
+/weather_analysis/summary          # 历史小时数据站点摘要
+/weather_analysis/daily_summary    # 历史日摘要
+/weather_analysis/hourly_series    # 历史小时序列
+/weather_analysis/window_mean      # 10 秒窗口均值
+/weather_10secmean                 # 课程指导文档兼容路径
+```
 
 ## Web 演示
 
@@ -42,16 +77,28 @@ http://127.0.0.1:3000
 /api/metrics
 /api/stations/tangshan/live?seconds=150
 /api/analysis/trends?metric=pressure&station_id=tangshan
+/api/analysis/trends?metric=temperature&station_id=all&range=7d&granularity=1h
+/api/analysis/trends?metric=temperature&station_id=tangshan&range=24h&granularity=10s
 /api/analysis/summary
 /api/records?station_id=tangshan
 /api/export/weather_observations.csv
 ```
 
+`/api/analysis/trends` 支持：
+
+| 参数 | 说明 |
+|---|---|
+| `station_id` | `tangshan` / `beijing` / `shanghai` / `all` |
+| `metric` | `temperature` / `humidity` / `pressure` / `wind_speed` / `wind_direction` |
+| `range` | `24h` / `7d` / `14d` / `all` / `custom` |
+| `granularity` | `1h` / `1d` / `10s` |
+| `start` / `end` | `range=custom` 时可选的起止时间 |
+
 前端包含三个页面：
 
-- `总览`：地图、站点当前读数和五项指标。
-- `详情`：站点筛选、指标筛选、HBase 最近 150 秒实时趋势、Spark 历史趋势。
-- `对比分析`：三站对比图、统计摘要、记录表、CSV 导出和 Spark 手动刷新。
+- `总览`：地图、站点当前读数、天气标签和五项指标，顶部显示历史小时序列范围与条数。
+- `详情`：站点筛选、指标筛选、HBase 最近 150 秒实时趋势、Spark 历史小时趋势。
+- `对比分析`：三站指标对比、Spark 统计摘要、HDFS 实时记录表、CSV 导出和 Spark 手动刷新。
 
 ## ESP32 与采集服务
 
@@ -75,6 +122,12 @@ uv run --with websockets python backend/scripts/openmeteo_station_client.py shan
 
 ## Hive 与 Spark
 
+上传历史 CSV 到 HDFS：
+
+```bash
+./scripts/upload-weather-to-hdfs.sh
+```
+
 创建 Hive 外部表：
 
 ```bash
@@ -86,6 +139,11 @@ uv run --with websockets python backend/scripts/openmeteo_station_client.py shan
 ```bash
 ./scripts/run-spark-analysis-yarn.sh
 ```
+
+Spark 分析会把历史统计和实时窗口分开计算：
+
+- `station_summary.json`、`daily_summary.json`、`hourly_series.json` 只统计历史小时记录，因此三站记录数各为 336。
+- `window_mean_series.json` 对有效输入做 10 秒窗口均值，用于保留课程要求的窗口计算结果。
 
 ## MVP 验收
 
@@ -113,7 +171,7 @@ ESP32_STATION_HOST=<ESP32_IP> ./scripts/verify-full.sh
 
 ## 报告
 
-同步维护的 Markdown 报告位于：
+同步维护的报告位于：
 
 ```text
 reports/实验报告.md

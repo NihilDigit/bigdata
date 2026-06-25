@@ -9,6 +9,7 @@ import {
   CloudDrizzle,
   CloudLightning,
   CloudRain,
+  CloudSnow,
   CloudSun,
   Download,
   RefreshCw,
@@ -140,6 +141,7 @@ const stationColors: Record<string, string> = {
 };
 
 const metricReadouts: Array<[MetricKey, string, string, number]> = [
+  ["temperature", "温度", "°C", 1],
   ["humidity", "湿度", "%", 0],
   ["pressure", "气压", "hPa", 2],
   ["wind_speed", "风速", "m/s", 1],
@@ -173,6 +175,7 @@ function weatherLabel(code: number) {
   if ([45, 48].includes(code)) return "雾";
   if ([51, 53, 55].includes(code)) return "毛毛雨";
   if ([61, 63, 65, 80, 81, 82].includes(code)) return "雨";
+  if ([71, 73, 75, 77].includes(code)) return "雪";
   if ([95, 96, 99].includes(code)) return "雷暴";
   return "天气";
 }
@@ -183,6 +186,7 @@ function WeatherIcon({ code, className }: { code: number; className?: string }) 
   if ([1, 2, 3].includes(code)) return <CloudSun {...props} />;
   if ([51, 53, 55].includes(code)) return <CloudDrizzle {...props} />;
   if ([61, 63, 65, 80, 81, 82].includes(code)) return <CloudRain {...props} />;
+  if ([71, 73, 75, 77].includes(code)) return <CloudSnow {...props} />;
   if ([95, 96, 99].includes(code)) return <CloudLightning {...props} />;
   return <Cloud {...props} />;
 }
@@ -234,7 +238,6 @@ async function fetchDashboard(): Promise<DashboardData> {
   ]);
   const normalizedRecords = records.map(toWeatherRow);
   const times = normalizedRecords.map((row) => row.collect_time).sort();
-  const sparkRecordCount = summary.reduce((total, item) => total + Number(item.records || 0), 0);
   return {
     metrics,
     current,
@@ -245,7 +248,7 @@ async function fetchDashboard(): Promise<DashboardData> {
         start_date: times[0]?.slice(0, 10) ?? "暂无",
         end_date: times.at(-1)?.slice(0, 10) ?? "暂无",
       },
-      record_count: sparkRecordCount || normalizedRecords.length,
+      record_count: normalizedRecords.length,
       spark_completed_at: sparkStatus?.completed_at ?? null,
     },
   };
@@ -416,7 +419,7 @@ function Overview({
           <div>
             <CardTitle>三站实时概览</CardTitle>
             <CardDescription>
-              历史范围 {range.start_date} 至 {range.end_date}，共 {data.meta.record_count} 条
+              历史小时序列 {range.start_date} 至 {range.end_date}，共 {data.meta.record_count} 条
             </CardDescription>
           </div>
         </CardHeader>

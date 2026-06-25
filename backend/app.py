@@ -378,6 +378,88 @@ def filter_station(rows: list[dict[str, Any]], station_id: str | None) -> list[d
     return [row for row in rows if row.get("station_id") == station_id or row.get("id") == station_id]
 
 
+def parse_series_time(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
+def filter_time_range(
+    rows: list[dict[str, Any]],
+    range_value: str,
+    start: str | None = None,
+    end: str | None = None,
+) -> list[dict[str, Any]]:
+    dated_rows = [(row, parse_series_time(row.get("collect_time"))) for row in rows]
+    dated_rows = [(row, collect_time) for row, collect_time in dated_rows if collect_time is not None]
+    if not dated_rows:
+        return []
+
+    if range_value == "custom":
+        start_time = parse_series_time(start)
+        end_time = parse_series_time(end)
+        return [
+            row
+            for row, collect_time in dated_rows
+            if (start_time is None or collect_time >= start_time)
+            and (end_time is None or collect_time <= end_time)
+        ]
+
+    if range_value in {"all", "full"}:
+        return [row for row, _ in dated_rows]
+
+    durations = {
+        "24h": timedelta(hours=24),
+        "7d": timedelta(days=7),
+        "14d": timedelta(days=14),
+    }
+    duration = durations.get(range_value)
+    if duration is None:
+        raise HTTPException(status_code=400, detail=f"unsupported range: {range_value}")
+
+    latest = max(collect_time for _, collect_time in dated_rows)
+    earliest = latest - duration
+    return [row for row, collect_time in dated_rows if collect_time > earliest]
+
+
+def aggregate_daily(rows: list[dict[str, Any]], metric: str) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in rows:
+        collect_time = parse_series_time(row.get("collect_time"))
+        value = row.get(metric)
+        if collect_time is None or value is None:
+            continue
+        number = float(value)
+        key = (
+            collect_time.date().isoformat(),
+            str(row.get("station_id", "")),
+            str(row.get("station_name", "")),
+        )
+        item = grouped.setdefault(
+            key,
+            {
+                "collect_time": key[0],
+                "station_id": key[1],
+                "station_name": key[2],
+                "_sum": 0.0,
+                "_count": 0,
+            },
+        )
+        item["_sum"] += number
+        item["_count"] += 1
+
+    result = []
+    for item in grouped.values():
+        count = item.pop("_count")
+        total = item.pop("_sum")
+        item[metric] = round(total / count, 2)
+        result.append(item)
+    return sorted(result, key=lambda row: (row["collect_time"], row["station_id"]))
+
+
 @app.get("/")
 def index() -> dict[str, str]:
     return {
@@ -463,12 +545,30 @@ def analysis_trends(
     metric: str = Query(default="temperature"),
     range: str = Query(default="7d"),
     granularity: str = Query(default="1h"),
+    start: str | None = Query(default=None),
+    end: str | None = Query(default=None),
 ) -> dict[str, Any]:
     ensure_metric(metric)
     effective_station = None if station_id == "all" else station_id
-    rows = filter_station(read_json(PROCESSED_DIR / "hourly_series.json"), effective_station)
+    if granularity in {"10s", "window", "window_mean"}:
+        path = PROCESSED_DIR / "window_mean_series.json"
+        rows = read_json(path if path.exists() else PROCESSED_DIR / "hourly_series.json")
+    elif granularity in {"1h", "hour", "hourly"}:
+        rows = read_json(PROCESSED_DIR / "hourly_series.json")
+    elif granularity in {"1d", "day", "daily"}:
+        rows = read_json(PROCESSED_DIR / "hourly_series.json")
+    else:
+        raise HTTPException(status_code=400, detail=f"unsupported granularity: {granularity}")
+
+    rows = filter_station(rows, effective_station)
+    rows = filter_time_range(rows, range, start, end)
+    if granularity in {"1d", "day", "daily"}:
+        rows = aggregate_daily(rows, metric)
+
     grouped: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
+        if metric not in row:
+            continue
         grouped.setdefault(row["station_id"], []).append(
             {
                 "collect_time": row["collect_time"],
