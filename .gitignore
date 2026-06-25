@@ -21,6 +21,9 @@ data/firmware/
 data/raw/*.body.csv
 data/raw/live_weather_observations.csv
 
+# Local reference text converted from the course guide docx.
+tutorial.txt
+
 # Next.js frontend dependencies and build output
 frontend/node_modules/
 frontend/.next/
@@ -40,3 +43,7 @@ reports/assets/*.png
 !reports/assets/web_next_detail.png
 !reports/assets/web_next_mobile.png
 !reports/assets/report_html_preview.png
+
+# Diagrams and code highlights generated for the course report.
+!reports/assets/diag_*.png
+!reports/assets/code_*.png
