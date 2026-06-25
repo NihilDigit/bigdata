@@ -3,7 +3,6 @@ from __future__ import annotations
 import csv
 import json
 import os
-import re
 import subprocess
 import time
 import urllib.error
@@ -24,7 +23,6 @@ PROCESSED_DIR = ROOT / "data" / "processed"
 RUNTIME_DIR = ROOT / ".runtime"
 SPARK_STATUS_PATH = RUNTIME_DIR / "spark-analysis-status.json"
 SPARK_LOG_PATH = RUNTIME_DIR / "spark-analysis.log"
-SPARK_SERVER_BOOT_LOG_PATH = RUNTIME_DIR / "spark-analysis-server.log"
 SPARK_SERVER_URL = os.environ.get("SPARK_ANALYSIS_SERVER_URL", "http://127.0.0.1:18081")
 SPARK_SERVER_START_TIMEOUT = float(os.environ.get("SPARK_ANALYSIS_SERVER_START_TIMEOUT", "90"))
 spark_server_process: subprocess.Popen[str] | None = None
@@ -80,34 +78,6 @@ def tail_lines(path: Path, limit: int = 80) -> list[str]:
     return path.read_text(encoding="utf-8", errors="replace").splitlines()[-limit:]
 
 
-def parse_spark_progress(lines: list[str], status_name: str) -> dict[str, Any]:
-    if status_name == "succeeded":
-        return {"progress_percent": 100, "progress_label": "Spark 重算完成"}
-    if status_name == "failed":
-        return {"progress_percent": 100, "progress_label": "Spark 重算失败"}
-
-    progress: dict[str, Any] = {"progress_percent": 0, "progress_label": "等待 YARN 接收任务"}
-    for line in lines:
-        state_match = re.search(r"Application report .*\(state: ([A-Z]+)\)", line)
-        if state_match:
-            state = state_match.group(1)
-            progress["progress_label"] = f"YARN {state}"
-            progress["progress_percent"] = 15 if state == "ACCEPTED" else 25
-        task_match = re.search(r"\((\d+)/(\d+)\)", line)
-        if task_match:
-            done = int(task_match.group(1))
-            total = max(1, int(task_match.group(2)))
-            progress["progress_percent"] = max(progress["progress_percent"], min(95, round(done / total * 100)))
-            progress["progress_label"] = f"当前 Stage {done}/{total} tasks"
-        app_match = re.search(r"(application_\d+_\d+)", line)
-        if app_match:
-            progress["application_id"] = app_match.group(1)
-        url_match = re.search(r"tracking URL: (\S+)", line)
-        if url_match:
-            progress["tracking_url"] = url_match.group(1)
-    return progress
-
-
 def read_spark_status() -> dict[str, Any]:
     if not SPARK_STATUS_PATH.exists():
         return {
@@ -118,13 +88,7 @@ def read_spark_status() -> dict[str, Any]:
         }
     status = json.loads(SPARK_STATUS_PATH.read_text(encoding="utf-8"))
     log_path = Path(status.get("log_path", SPARK_LOG_PATH))
-    progress_lines = tail_lines(log_path, 300)
-    status["log_tail"] = progress_lines[-80:]
-    parsed = parse_spark_progress(progress_lines, str(status.get("status", "idle")))
-    for key, value in parsed.items():
-        if key in {"progress_percent", "progress_label"} and status.get(key) is not None:
-            continue
-        status[key] = value
+    status["log_tail"] = tail_lines(log_path, 240)
     return status
 
 
@@ -166,8 +130,8 @@ def start_spark_server() -> None:
             "progress_label": "启动 spark-submit 常驻服务",
         }
         write_json_atomic(SPARK_STATUS_PATH, status)
-        SPARK_SERVER_BOOT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        boot_log = SPARK_SERVER_BOOT_LOG_PATH.open("a", encoding="utf-8")
+        SPARK_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        boot_log = SPARK_LOG_PATH.open("a", encoding="utf-8")
         boot_log.write(f"[{now_iso()}] start {' '.join(command)}\n")
         boot_log.flush()
         spark_server_process = subprocess.Popen(

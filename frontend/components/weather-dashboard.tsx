@@ -699,7 +699,7 @@ function Analysis({
             </div>
           ) : null}
           {sparkStatus?.log_tail?.length ? (
-            <pre className="spark-log">{sparkStatus.log_tail.slice(-14).join("\n")}</pre>
+            <pre className="spark-log">{sparkStatus.log_tail.join("\n")}</pre>
           ) : null}
         </section>
       ) : null}

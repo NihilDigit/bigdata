@@ -71,7 +71,7 @@ class SparkAnalysisRuntime:
         }
         write_json_atomic(STATUS_PATH, self.status)
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        LOG_PATH.write_text(f"[{now_iso()}] starting persistent Spark driver pid={os.getpid()}\n", encoding="utf-8")
+        self.append_log(f"[{now_iso()}] starting persistent Spark driver pid={os.getpid()}")
         self.spark = build_spark_session(args)
         self.set_status(
             status="idle",

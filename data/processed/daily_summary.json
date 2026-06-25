@@ -423,19 +423,19 @@
     "station_id": "beijing",
     "station_name": "北京",
     "collect_date": "2026-06-25",
-    "records": 3834,
-    "avg_temperature": 30.97,
-    "avg_humidity": 28.19,
+    "records": 4059,
+    "avg_temperature": 30.91,
+    "avg_humidity": 28.35,
     "max_temperature": 32.19,
-    "min_temperature": 29.71
+    "min_temperature": 29.7
   },
   {
     "station_id": "shanghai",
     "station_name": "上海",
     "collect_date": "2026-06-25",
-    "records": 3899,
-    "avg_temperature": 23.82,
-    "avg_humidity": 77.15,
+    "records": 4124,
+    "avg_temperature": 23.77,
+    "avg_humidity": 77.41,
     "max_temperature": 25.19,
     "min_temperature": 22.6
   },
